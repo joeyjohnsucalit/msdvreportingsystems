@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../db/connection.php';
+require_once '../db/image_storage.php';
 $allowedRoles = ['teacher','csu','jassu','nurse','student'];
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], $allowedRoles)) {
     header('Location: ../index.php'); exit;
@@ -57,17 +58,12 @@ if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
         $err = 'You cannot report yourself.';
     } else {
         // Evidence can come from either the file picker OR the camera.
-        // Store both in uploads/ and save a project-relative path in the database.
-        $uploadDir = dirname(__DIR__) . '/uploads/';
-        if (!is_dir($uploadDir) && !mkdir($uploadDir, 0755, true)) {
-            $err = 'The uploads folder could not be created. Please contact the administrator.';
-        }
-
-        $evidencePath = null;
+        // Images are stored in TiDB (stored_images table) so they survive redeploys.
+        $evidenceBytes = null;
 
         // Prefer a successfully uploaded file when one was selected.
         $uploadError = $_FILES['evidence']['error'] ?? UPLOAD_ERR_NO_FILE;
-        if (!$err && $uploadError !== UPLOAD_ERR_NO_FILE && $uploadError !== UPLOAD_ERR_OK) {
+        if ($uploadError !== UPLOAD_ERR_NO_FILE && $uploadError !== UPLOAD_ERR_OK) {
             $uploadErrors = [
                 UPLOAD_ERR_INI_SIZE   => 'The selected image is larger than the server upload limit.',
                 UPLOAD_ERR_FORM_SIZE  => 'The selected image is too large.',
@@ -77,81 +73,50 @@ if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
                 UPLOAD_ERR_EXTENSION  => 'The server blocked the image upload.'
             ];
             $err = $uploadErrors[$uploadError] ?? 'The image could not be uploaded. Please try again.';
-        }
-
-        if (!$err && $uploadError === UPLOAD_ERR_OK) {
+        } elseif ($uploadError === UPLOAD_ERR_OK) {
             if (empty($_FILES['evidence']['tmp_name']) || !is_uploaded_file($_FILES['evidence']['tmp_name'])) {
                 $err = 'The selected evidence image did not reach the server. Please choose it again and retry.';
             } else {
-            $imageInfo = @getimagesize($_FILES['evidence']['tmp_name']);
-            if ($imageInfo === false) {
-                $err = 'Evidence must be a valid image file.';
-            } else {
-                $mimeToExt = [
-                    'image/jpeg' => 'jpg',
-                    'image/png'  => 'png',
-                    'image/gif'  => 'gif',
-                    'image/webp' => 'webp'
-                ];
-                $mime = $imageInfo['mime'] ?? '';
-                if (!isset($mimeToExt[$mime])) {
-                    $err = 'Please upload a JPG, PNG, GIF, or WEBP image.';
-                } else {
-                    $filename = 'evidence_' . bin2hex(random_bytes(12)) . '.' . $mimeToExt[$mime];
-                    if (move_uploaded_file($_FILES['evidence']['tmp_name'], $uploadDir . $filename)) {
-                        $evidencePath = 'uploads/' . $filename;
-                    } else {
-                        $err = 'The evidence image could not be saved. Check the uploads folder permissions.';
-                    }
+                $evidenceBytes = file_get_contents($_FILES['evidence']['tmp_name']);
+                if ($evidenceBytes === false) {
+                    $err = 'The selected evidence image could not be read. Please try again.';
                 }
             }
-            }
-        } elseif (!$err && !empty($_POST['evidence_capture_data'])) {
+        } elseif (!empty($_POST['evidence_capture_data'])) {
             // Camera photos are sent as a base64 data URL in a hidden form field.
-            $dataUrl = $_POST['evidence_capture_data'];
-            if (preg_match('/^data:image\\/(png|jpeg|webp);base64,([A-Za-z0-9+\\/]+=*)$/', $dataUrl, $matches)) {
-                $imageBytes = base64_decode($matches[2], true);
-                if ($imageBytes === false || strlen($imageBytes) > 10 * 1024 * 1024) {
-                    $err = 'The captured evidence image is invalid or too large.';
-                } else {
-                    $imageCheck = @getimagesizefromstring($imageBytes);
-                    if ($imageCheck === false) {
-                        $err = 'The captured evidence is not a valid image.';
-                    } else {
-                        $extension = ($matches[1] === 'jpeg') ? 'jpg' : $matches[1];
-                        $filename = 'evidence_' . bin2hex(random_bytes(12)) . '.' . $extension;
-                        if (file_put_contents($uploadDir . $filename, $imageBytes) !== false) {
-                            $evidencePath = 'uploads/' . $filename;
-                        } else {
-                            $err = 'The captured evidence could not be saved. Check the uploads folder permissions.';
-                        }
-                    }
-                }
-            } else {
+            $evidenceBytes = decodeImageDataUrl($_POST['evidence_capture_data']);
+            if ($evidenceBytes === null) {
                 $err = 'The captured evidence image data is invalid.';
             }
         }
 
-        if (!$err && $evidencePath === null) {
+        if (!$err && $evidenceBytes === null) {
             $err = 'No evidence image was received. Please choose an image or take a photo, confirm the preview, and submit again.';
         }
 
+        $evidencePath = $facePath = $sigPath = null;
         if (!$err) {
-        $facePath = null;
-        if (!empty($_POST['face_capture_data'])) {
-            $imgData = str_replace('data:image/png;base64,', '', $_POST['face_capture_data']);
-            $imgData = base64_decode($imgData);
-            $facePath = 'uploads/face_' . time() . '.png';
-            file_put_contents('../' . $facePath, $imgData);
+            try {
+                $evidencePath = storeImage($pdo, $evidenceBytes, 'evidence');
+
+                if (!empty($_POST['face_capture_data'])) {
+                    $faceBytes = decodeImageDataUrl($_POST['face_capture_data']);
+                    if ($faceBytes !== null) $facePath = storeImage($pdo, $faceBytes, 'face');
+                }
+
+                if (!empty($_POST['signature_data'])) {
+                    $sigBytes = decodeImageDataUrl($_POST['signature_data']);
+                    if ($sigBytes !== null) $sigPath = storeImage($pdo, $sigBytes, 'signature');
+                }
+            } catch (RuntimeException $e) {
+                $err = 'Evidence image: ' . $e->getMessage();
+            } catch (PDOException $e) {
+                error_log($e->getMessage());
+                $err = 'The images could not be saved to the database. Please try again.';
+            }
         }
 
-        $sigPath = null;
-        if (!empty($_POST['signature_data'])) {
-            $sigData = str_replace('data:image/png;base64,', '', $_POST['signature_data']);
-            $sigData = base64_decode($sigData);
-            $sigPath = 'uploads/sig_' . time() . '.png';
-            file_put_contents('../' . $sigPath, $sigData);
-        }
+        if (!$err) {
 
         $pdo->prepare("INSERT INTO violations (student_id,reporter_id,category,violation,description,evidence_path,face_capture_path,signature_path) VALUES (?,?,?,?,?,?,?,?)")
             ->execute([$sid, $_SESSION['user_id'], $category, $violation, $description, $evidencePath, $facePath, $sigPath]);
