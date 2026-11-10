@@ -4,7 +4,7 @@ require_once '../db/connection.php';
 require_once '../db/image_storage.php';
 $allowedRoles = ['teacher','csu','jassu','nurse','student'];
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], $allowedRoles)) {
-    header('Location: ../login.php'); exit;
+    header('Location: ../index.php'); exit;
 }
 
 $role = $_SESSION['role'];
@@ -1132,7 +1132,7 @@ if (isset($_GET['get_student'])) {
   <div class="modal-sheet" style="border-radius:var(--radius)">
     <div class="confirm-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
     <h2 class="modal-title" id="faceConsentTitle" style="text-align:center">Student Face Capture Consent</h2>
-    <p class="confirm-text" style="text-align:left;margin-top:12px">Before continuing, the student must understand and agree to the capture of a facial photograph. The photo will be collected only for student identity verification and documentation related to the MSDV Reporting System. It will be stored with the report and made available only to personnel authorized to handle student discipline records. The camera will start only after consent is given. The student may decline; in that case, no face photo will be taken. Please capture only with the student's informed permission and follow the school's privacy and data-retention policies.</p>
+    <p class="confirm-text" style="text-align:left;margin-top:12px">Before continuing, the student must understand and agree to the capture of a facial photograph. The photo will be collected for documentation related to the MSDV Reporting System. Face positioning is used only to guide photo capture; the system does not recognize or identify the student. It will be stored with the report and made available only to personnel authorized to handle student discipline records. The camera will start only after consent is given. The student may decline; in that case, no face photo will be taken. Please capture only with the student's informed permission and follow the school's privacy and data-retention policies.</p>
     <div style="display:flex;gap:8px">
       <button type="button" class="icon-btn" style="flex:1;justify-content:center" onclick="declineFaceConsent()">Decline</button>
       <button type="button" class="submit-btn" style="flex:1" onclick="acceptFaceConsent()">I Agree &amp; Proceed</button>
@@ -1204,6 +1204,8 @@ if (isset($_GET['get_student'])) {
   </div>
 </div>
 
+<!-- Face positioning only: detects whether one face fits inside the oval; does not identify the person. -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script>
 /* ── STUDENT ID FORMAT ── */
 document.getElementById('studentIDInput').addEventListener('input', function(){
@@ -1286,9 +1288,9 @@ async function acceptFaceConsent(){
 }
 async function loadFaceDetector(){
   if(faceDetectorReady)return true;
-  if(!window.faceapi){alert('Face detection could not be loaded. Check your internet connection and try again.');return false;}
+  if(!window.faceapi){alert('The face-positioning component could not load. Connect to the internet and refresh the page.');return false;}
   try{await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_URL);faceDetectorReady=true;return true;}
-  catch(e){console.error(e);alert('Face detection model could not be loaded. Please check your internet connection and try again.');return false;}
+  catch(e){console.error(e);alert('The face-positioning model could not load. Connect to the internet and try again.');return false;}
 }
 function resetFaceDetection(){
   if(faceDetectionTimer)cancelAnimationFrame(faceDetectionTimer);
