@@ -43,10 +43,10 @@ if ($role === 'student') {
 
 // SUBMIT REPORT
 if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
-    $sid         = trim($_POST['student_id']);
-    $category    = $_POST['category'];
-    $violation   = trim($_POST['violation']);
-    $description = trim($_POST['description']);
+    $sid         = trim($_POST['student_id'] ?? '');
+    $category    = $_POST['category'] ?? '';
+    $violation   = trim($_POST['violation'] ?? '');
+    $description = trim($_POST['description'] ?? '');
 
     $sCheck = $pdo->prepare("SELECT * FROM students WHERE student_id=?");
     $sCheck->execute([$sid]);
@@ -56,13 +56,16 @@ if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
         $err = 'Student ID not found in records.';
     } elseif ($ownSid && $ownSid === $sid) {
         $err = 'You cannot report yourself.';
+    } elseif (!in_array($category, ['minor', 'major'], true)) {
+        $err = 'Invalid violation category.';
+    } elseif ($violation === '') {
+        $err = 'Please select a violation.';
     } else {
         // Evidence can come from either the file picker OR the camera.
         // Images are stored in TiDB (stored_images table) so they survive redeploys.
         $evidenceBytes = null;
-
-        // Prefer a successfully uploaded file when one was selected.
         $uploadError = $_FILES['evidence']['error'] ?? UPLOAD_ERR_NO_FILE;
+
         if ($uploadError !== UPLOAD_ERR_NO_FILE && $uploadError !== UPLOAD_ERR_OK) {
             $uploadErrors = [
                 UPLOAD_ERR_INI_SIZE   => 'The selected image is larger than the server upload limit.',
@@ -83,7 +86,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
                 }
             }
         } elseif (!empty($_POST['evidence_capture_data'])) {
-            // Camera photos are sent as a base64 data URL in a hidden form field.
             $evidenceBytes = decodeImageDataUrl($_POST['evidence_capture_data']);
             if ($evidenceBytes === null) {
                 $err = 'The captured evidence image data is invalid.';
@@ -95,76 +97,156 @@ if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
         }
 
         $evidencePath = $facePath = $sigPath = null;
+
+        // Store uploaded images using the existing image-storage helper.
         if (!$err) {
             try {
                 $evidencePath = storeImage($pdo, $evidenceBytes, 'evidence');
 
                 if (!empty($_POST['face_capture_data'])) {
                     $faceBytes = decodeImageDataUrl($_POST['face_capture_data']);
-                    if ($faceBytes !== null) $facePath = storeImage($pdo, $faceBytes, 'face');
+                    if ($faceBytes !== null) {
+                        $facePath = storeImage($pdo, $faceBytes, 'face');
+                    }
                 }
 
                 if (!empty($_POST['signature_data'])) {
                     $sigBytes = decodeImageDataUrl($_POST['signature_data']);
-                    if ($sigBytes !== null) $sigPath = storeImage($pdo, $sigBytes, 'signature');
+                    if ($sigBytes !== null) {
+                        $sigPath = storeImage($pdo, $sigBytes, 'signature');
+                    }
                 }
             } catch (RuntimeException $e) {
                 $err = 'Evidence image: ' . $e->getMessage();
             } catch (PDOException $e) {
-                error_log($e->getMessage());
+                error_log('MSDV IMAGE STORAGE ERROR: ' . $e->getMessage());
                 $err = 'The images could not be saved to the database. Please try again.';
             }
         }
 
         if (!$err) {
+            try {
+                // Keep the violation, disciplinary action, and notification together.
+                $pdo->beginTransaction();
 
-        $pdo->prepare("INSERT INTO violations (student_id,reporter_id,category,violation,description,evidence_path,face_capture_path,signature_path) VALUES (?,?,?,?,?,?,?,?)")
-            ->execute([$sid, $_SESSION['user_id'], $category, $violation, $description, $evidencePath, $facePath, $sigPath]);
+                // 1. Insert the violation.
+                $insertViolation = $pdo->prepare("
+                    INSERT INTO violations
+                    (student_id, reporter_id, category, violation, description, evidence_path, face_capture_path, signature_path)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $insertViolation->execute([
+                    $sid,
+                    $_SESSION['user_id'],
+                    $category,
+                    $violation,
+                    $description,
+                    $evidencePath,
+                    $facePath,
+                    $sigPath
+                ]);
 
-        $violationId = $pdo->lastInsertId();
+                // 2. Read the generated ID from the same database connection.
+                // TiDB's LAST_INSERT_ID() is used instead of trusting a possibly
+                // unexpected PDO::lastInsertId() response.
+                $violationId = (int) $pdo->query("SELECT LAST_INSERT_ID()")->fetchColumn();
 
-        // Offense counts (prepared statements instead of string interpolation)
-        $cntStmt = $pdo->prepare("SELECT COUNT(*) FROM violations WHERE student_id=? AND category=?");
-        $cntStmt->execute([$sid, 'minor']);
-        $minorCount = (int)$cntStmt->fetchColumn();
-        $cntStmt->execute([$sid, 'major']);
-        $majorCount = (int)$cntStmt->fetchColumn();
+                if ($violationId <= 0) {
+                    throw new RuntimeException('TiDB did not return a valid new violation ID.');
+                }
 
-        $sanction = '';
-        if ($category === 'minor') {
-            $offense = $minorCount;
-            if ($offense == 1)      $sanction = 'First Offense: Verbal Warning and Counseling';
-            elseif ($offense == 2)  $sanction = 'Second Offense: Written Warning and Reflective Essay';
-            elseif ($offense == 3)  $sanction = 'Third Offense: Community Service 5-10 hours and Parental Notification';
-            elseif ($offense == 4)  $sanction = 'Fourth Offense: Short-term Suspension 1-3 days and Mandatory Workshop';
-            elseif ($offense >= 5)  $sanction = 'Fifth Offense: Long-term Suspension 1 week and Disciplinary Probation';
-        } else {
-            $offense = $majorCount;
-            if ($offense == 1) {
-                $sanction = $violation === 'Academic Dishonesty'
-                    ? 'First Major Offense (Academic Dishonesty): Failing grade for the course and Mandatory Ethics Workshop'
-                    : 'First Major Offense: Suspension (1 week to 1 month) and Mandatory Counseling';
-            } elseif ($offense == 2) {
-                $sanction = $violation === 'Academic Dishonesty'
-                    ? 'Second Major Offense (Academic Dishonesty): Suspension for 1 Semester'
-                    : 'Second Major Offense: Suspension (1 month to 1 semester) and Extended Counseling';
-            } elseif ($offense >= 3) {
-                $sanction = $violation === 'Academic Dishonesty'
-                    ? 'Third Major Offense (Academic Dishonesty): Expulsion'
-                    : 'Third Major Offense: Expulsion and Notification to Authorities if Applicable';
+                // Confirm that this ID belongs to the row just inserted.
+                $verifyViolation = $pdo->prepare("SELECT id FROM violations WHERE id = ? LIMIT 1");
+                $verifyViolation->execute([$violationId]);
+                if (!$verifyViolation->fetchColumn()) {
+                    throw new RuntimeException('The generated violation ID was not found in the violations table.');
+                }
+
+                // 3. Count the student's offenses, including the new violation.
+                $cntStmt = $pdo->prepare("SELECT COUNT(*) FROM violations WHERE student_id = ? AND category = ?");
+                $cntStmt->execute([$sid, 'minor']);
+                $minorCount = (int) $cntStmt->fetchColumn();
+                $cntStmt->execute([$sid, 'major']);
+                $majorCount = (int) $cntStmt->fetchColumn();
+
+                // 4. Determine the sanction using the existing MSDV rules.
+                $sanction = '';
+
+                if ($category === 'minor') {
+                    $offense = $minorCount;
+                    if ($offense === 1) {
+                        $sanction = 'First Offense: Verbal Warning and Counseling';
+                    } elseif ($offense === 2) {
+                        $sanction = 'Second Offense: Written Warning and Reflective Essay';
+                    } elseif ($offense === 3) {
+                        $sanction = 'Third Offense: Community Service 5-10 hours and Parental Notification';
+                    } elseif ($offense === 4) {
+                        $sanction = 'Fourth Offense: Short-term Suspension 1-3 days and Mandatory Workshop';
+                    } elseif ($offense >= 5) {
+                        $sanction = 'Fifth Offense: Long-term Suspension 1 week and Disciplinary Probation';
+                    }
+                } else {
+                    $offense = $majorCount;
+                    if ($offense === 1) {
+                        $sanction = $violation === 'Academic Dishonesty'
+                            ? 'First Major Offense (Academic Dishonesty): Failing grade for the course and Mandatory Ethics Workshop'
+                            : 'First Major Offense: Suspension (1 week to 1 month) and Mandatory Counseling';
+                    } elseif ($offense === 2) {
+                        $sanction = $violation === 'Academic Dishonesty'
+                            ? 'Second Major Offense (Academic Dishonesty): Suspension for 1 Semester'
+                            : 'Second Major Offense: Suspension (1 month to 1 semester) and Extended Counseling';
+                    } elseif ($offense >= 3) {
+                        $sanction = $violation === 'Academic Dishonesty'
+                            ? 'Third Major Offense (Academic Dishonesty): Expulsion'
+                            : 'Third Major Offense: Expulsion and Notification to Authorities if Applicable';
+                    }
+                }
+
+                if ($sanction === '') {
+                    throw new RuntimeException('Could not determine a sanction for this offense.');
+                }
+
+                // 5. Prevent a duplicate action for this exact violation.
+                $checkAction = $pdo->prepare("SELECT id FROM disciplinary_actions WHERE violation_id = ? LIMIT 1");
+                $checkAction->execute([$violationId]);
+                if ($checkAction->fetchColumn()) {
+                    throw new RuntimeException('A disciplinary action already exists for new violation ID ' . $violationId . '.');
+                }
+
+                // 6. Insert the disciplinary action.
+                $insertAction = $pdo->prepare("
+                    INSERT INTO disciplinary_actions (violation_id, student_id, sanction, status)
+                    VALUES (?, ?, ?, 'pending')
+                ");
+                $insertAction->execute([$violationId, $sid, $sanction]);
+
+                // 7. Notify the administrator, if an admin account exists.
+                $adminId = $pdo->query("SELECT id FROM users WHERE role = 'admin' LIMIT 1")->fetchColumn();
+                if ($adminId) {
+                    $notify = $pdo->prepare("
+                        INSERT INTO notifications (user_id, message, link)
+                        VALUES (?, ?, ?)
+                    ");
+                    $notify->execute([
+                        $adminId,
+                        "New violation reported for student $sid by " . ($_SESSION['full_name'] ?? 'a user'),
+                        '../admin/violation-records.php'
+                    ]);
+                }
+
+                $pdo->commit();
+                $_SESSION['report_success'] = true;
+                header('Location: report-form.php');
+                exit;
+
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                error_log('MSDV REPORT SUBMISSION ERROR: ' . $e->getMessage());
+                $err = 'The report could not be submitted. Please try again. If the problem continues, contact the system administrator.';
             }
         }
-
-        $pdo->prepare("INSERT INTO disciplinary_actions (violation_id,student_id,sanction,status) VALUES (?,?,?,'pending')")
-            ->execute([$violationId, $sid, $sanction]);
-
-        $adminId = $pdo->query("SELECT id FROM users WHERE role='admin' LIMIT 1")->fetchColumn();
-        $pdo->prepare("INSERT INTO notifications (user_id,message,link) VALUES (?,?,?)")
-            ->execute([$adminId, "New violation reported for student $sid by " . $_SESSION['full_name'], '../admin/violation-records.php']);
-
-        $_SESSION['report_success'] = true;
-        header('Location: report-form.php'); exit;
-        } // end if (!$err): evidence could be saved successfully
     }
 }
 
