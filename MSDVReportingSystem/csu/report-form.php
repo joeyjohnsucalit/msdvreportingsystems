@@ -4,7 +4,7 @@ require_once '../db/connection.php';
 require_once '../db/image_storage.php';
 $allowedRoles = ['teacher','csu','jassu','nurse','student'];
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], $allowedRoles)) {
-    header('Location: ../index.php'); exit;
+    header('Location: ../login.php'); exit;
 }
 
 $role = $_SESSION['role'];
