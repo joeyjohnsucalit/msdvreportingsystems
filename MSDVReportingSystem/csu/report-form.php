@@ -617,44 +617,36 @@ if (isset($_GET['get_student'])) {
     background:#000; border-radius:0; margin:24px 0 0;
   }
   #cameraOverlay.face-capture-mode #cameraStream { position:absolute; inset:0; width:100%; height:100%; max-height:none; aspect-ratio:auto; object-fit:cover; border-radius:0; }
-  #cameraOverlay.face-capture-mode .face-capture-bottom { flex-shrink:0; padding-top:16px; }
-  /* Face mode is fully automatic: there is no shutter button at all */
-  #cameraOverlay.face-capture-mode .face-capture-actions,
+  #cameraOverlay.face-capture-mode .face-guide-overlay { position:absolute; z-index:2; inset:0; display:block; pointer-events:none; }
+  #cameraOverlay.face-capture-mode .face-oval { position:absolute; left:50%; top:48%; transform:translate(-50%,-50%); width:min(58%,390px); height:min(78%,620px); border:4px solid #f5b942; border-radius:50% / 46%; box-shadow:0 0 0 9999px rgba(0,0,0,.20); transition:border-color .18s,box-shadow .18s; }
+  #cameraOverlay.face-capture-mode .face-oval.out { border-color:#ef4444; box-shadow:0 0 0 9999px rgba(0,0,0,.25),0 0 18px rgba(239,68,68,.35); }
+  #cameraOverlay.face-capture-mode .face-oval.good { border-color:#22c55e; box-shadow:0 0 0 9999px rgba(0,0,0,.18),0 0 22px rgba(34,197,94,.5); }
+  #cameraOverlay.face-capture-mode .face-detection-status { flex-shrink:0; text-align:center; padding:12px 8px 0; color:#f5b942; font-size:14px; font-weight:650; }
+  #cameraOverlay.face-capture-mode .face-detection-status.good { color:#4ade80; }
+  #cameraOverlay.face-capture-mode .face-detection-status.bad { color:#f87171; }
   #cameraOverlay.face-capture-mode .face-shutter { display:none !important; }
+  .face-corner { display:none; }
+  #cameraOverlay.face-capture-mode .face-corner { display:block; position:absolute; z-index:3; width:clamp(40px, 11vw, 108px); height:clamp(40px, 11vw, 108px); pointer-events:none; }
+  #cameraOverlay.face-capture-mode .face-corner:before, #cameraOverlay.face-capture-mode .face-corner:after { content:""; position:absolute; display:block; background:#2582ff; border-radius:5px; }
+  #cameraOverlay.face-capture-mode .face-corner.tl { top:5%; left:2%; }
+  #cameraOverlay.face-capture-mode .face-corner.tr { top:5%; right:2%; transform:scaleX(-1); }
+  #cameraOverlay.face-capture-mode .face-corner.bl { bottom:5%; left:2%; transform:scaleY(-1); }
+  #cameraOverlay.face-capture-mode .face-corner.br { bottom:5%; right:2%; transform:scale(-1); }
+  #cameraOverlay.face-capture-mode .face-corner:before { left:0; top:0; width:100%; height:9px; }
+  #cameraOverlay.face-capture-mode .face-corner:after { left:0; top:0; width:9px; height:100%; }
+  #cameraOverlay.face-capture-mode .face-capture-bottom { flex-shrink:0; padding-top:16px; }
+  #cameraOverlay.face-capture-mode .face-capture-actions { display:flex; justify-content:center; align-items:center; padding:8px 0 max(8px, env(safe-area-inset-bottom)); }
+  #cameraOverlay.face-capture-mode .camera-choice { display:flex; align-items:center; justify-content:center; gap:12px; width:max-content; max-width:100%; margin:0 auto 20px; padding:12px 20px; color:#f7f8fc; background:#10151e; border:1px solid #3b4351; border-radius:28px; font-size:15px; font-weight:650; }
+  #cameraOverlay.face-capture-mode .camera-choice svg { width:22px; height:22px; }
+  #cameraOverlay.face-capture-mode .face-capture-actions { display:flex; width:100%; justify-content:center; align-items:center; gap:10px; }
+  #cameraOverlay.face-capture-mode .face-capture-actions .face-shutter { display:block; flex:0 0 auto; margin-inline:auto; }
+  #cameraOverlay.face-capture-mode .face-hint { display:flex; align-items:center; gap:10px; color:#c4cfe2; font-size:clamp(11px, 1.8vw, 16px); line-height:1.4; }
+  #cameraOverlay.face-capture-mode .face-hint svg { width:30px; height:30px; flex-shrink:0; }
+  #cameraOverlay.face-capture-mode .face-shutter { width:clamp(76px, 12vw, 112px); height:clamp(76px, 12vw, 112px); border-radius:50%; border:7px solid #f8faff; background:#287cf4; box-shadow:inset 0 0 0 5px #0d1b32; cursor:pointer; padding:0; }
   #cameraOverlay.face-capture-mode #cameraReview { flex:1; min-height:0; display:flex; flex-direction:column; justify-content:center; }
   #cameraOverlay.face-capture-mode #capturedImgEl { flex:1; min-height:0; max-height:calc(100dvh - 240px); width:100%; height:auto; object-fit:contain; border-radius:0; aspect-ratio:auto; }
   #cameraOverlay.face-capture-mode .modal-row { padding-bottom:4px; }
   #cameraOverlay.face-capture-mode .modal-row button { min-height:48px; }
-
-  /* ── AUTO FACE CAPTURE: oblong guide + status ── */
-  .face-oval {
-    display:none;
-    position:absolute;
-    z-index:2;
-    left:50%; top:50%;
-    transform:translate(-50%,-50%);
-    border:5px solid #ef4444;                    /* red = face does not fit */
-    border-radius:50%;
-    box-shadow:0 0 0 9999px rgba(0,0,0,0.45);    /* dims everything outside the oblong */
-    pointer-events:none;
-    transition:border-color .2s ease;
-  }
-  .face-oval.ok { border-color:#22c55e; }        /* green = face fits */
-  .face-status {
-    display:none;
-    width:max-content; max-width:100%;
-    margin:0 auto 6px;
-    padding:10px 20px;
-    border-radius:28px;
-    font-size:clamp(13px, 3.6vw, 16px);
-    font-weight:650;
-    text-align:center;
-    color:#fff;
-    background:#b91c1c;
-    transition:background .2s ease;
-  }
-  .face-status.ok { background:#15803d; }
-  .face-status.info { background:#10151e; border:1px solid #3b4351; }
 
   /* Full-screen evidence camera: same immersive layout without the face guide */
   #cameraOverlay.evidence-capture-mode {
@@ -676,11 +668,11 @@ if (isset($_GET['get_student'])) {
   #cameraOverlay.evidence-capture-mode #cameraLive { display:flex; flex:1; min-height:0; flex-direction:column; }
   #cameraOverlay.evidence-capture-mode .camera-preview-stage { position:relative; flex:1; min-height:220px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#000; border-radius:0; margin:24px 0 0; }
   #cameraOverlay.evidence-capture-mode #cameraStream { position:absolute; inset:0; width:100%; height:100%; max-height:none; aspect-ratio:auto; object-fit:cover; border-radius:0; }
-  #cameraOverlay.evidence-capture-mode .face-oval, #cameraOverlay.evidence-capture-mode .face-status { display:none !important; }
+  #cameraOverlay.evidence-capture-mode .face-corner, #cameraOverlay.evidence-capture-mode .face-guide-overlay { display:none !important; }
   #cameraOverlay.evidence-capture-mode #standardCameraActions { display:none !important; }
   #cameraOverlay.evidence-capture-mode .face-capture-bottom { display:block; flex-shrink:0; padding-top:16px; }
   #cameraOverlay.evidence-capture-mode .face-capture-actions { display:flex; justify-content:center; align-items:center; padding:8px 0 max(8px, env(safe-area-inset-bottom)); }
-  #cameraOverlay.evidence-capture-mode .face-shutter { display:block; width:clamp(76px, 12vw, 112px); height:clamp(76px, 12vw, 112px); border-radius:50%; border:7px solid #f8faff; background:#287cf4; box-shadow:inset 0 0 0 5px #0d1b32; cursor:pointer; padding:0; }
+  #cameraOverlay.evidence-capture-mode .face-shutter { width:clamp(76px, 12vw, 112px); height:clamp(76px, 12vw, 112px); border-radius:50%; border:7px solid #f8faff; background:#287cf4; box-shadow:inset 0 0 0 5px #0d1b32; cursor:pointer; padding:0; }
   #cameraOverlay.evidence-capture-mode #cameraReview { flex:1; min-height:0; display:flex; flex-direction:column; justify-content:center; }
   #cameraOverlay.evidence-capture-mode #capturedImgEl { flex:1; min-height:0; max-height:calc(100dvh - 240px); width:100%; height:auto; object-fit:contain; border-radius:0; aspect-ratio:auto; }
   #cameraOverlay.evidence-capture-mode .modal-row { padding-bottom:4px; }
@@ -694,6 +686,8 @@ if (isset($_GET['get_student'])) {
     #cameraOverlay.face-capture-mode .face-capture-heading { padding-top:8px; }
     #cameraOverlay.face-capture-mode .camera-preview-stage { margin-top:10px; }
     #cameraOverlay.face-capture-mode .face-capture-bottom { padding-top:8px; }
+    #cameraOverlay.face-capture-mode .camera-choice { margin-bottom:8px; padding:8px 16px; }
+    #cameraOverlay.face-capture-mode .face-shutter { width:64px; height:64px; }
   }
 
   .modal-center .modal-sheet {
@@ -759,21 +753,6 @@ if (isset($_GET['get_student'])) {
   .confirm-icon svg { width: 22px; height: 22px; color: var(--accent); }
   .confirm-text { text-align: center; font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; }
   .confirm-text strong { display: block; font-size: 16px; color: var(--text-primary); margin-bottom: 6px; }
-
-  /* face consent modal */
-  .consent-box {
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 12px 14px;
-    font-size: 13px;
-    color: var(--text-secondary);
-    line-height: 1.6;
-    margin-bottom: 16px;
-    text-align: left;
-  }
-  .consent-box strong { color: var(--text-primary); }
-  .consent-box ul { margin: 8px 0 0 18px; }
 
   /* first login modal */
   .first-login-badge {
@@ -1122,8 +1101,7 @@ if (isset($_GET['get_student'])) {
       <div class="section-body">
         <div class="field">
           <label>Face Capture</label>
-          <!-- Opens the consent pop-up first; the camera only starts after the student approves -->
-          <button type="button" class="icon-btn" id="faceCaptureBtn" onclick="openFaceConsent()">
+          <button type="button" class="icon-btn" id="faceCaptureBtn" onclick="showFaceConsent()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             Capture Student Face
           </button>
@@ -1149,6 +1127,19 @@ if (isset($_GET['get_student'])) {
   </form>
 </div>
 
+<!-- STUDENT FACE CAPTURE CONSENT -->
+<div class="modal-overlay modal-center" id="faceConsentOverlay" role="dialog" aria-modal="true" aria-labelledby="faceConsentTitle">
+  <div class="modal-sheet" style="border-radius:var(--radius)">
+    <div class="confirm-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+    <h2 class="modal-title" id="faceConsentTitle" style="text-align:center">Student Face Capture Consent</h2>
+    <p class="confirm-text" style="text-align:left;margin-top:12px">Before continuing, the student must understand and agree to the capture of a facial photograph. The photo will be collected only for student identity verification and documentation related to the MSDV Reporting System. It will be stored with the report and made available only to personnel authorized to handle student discipline records. The camera will start only after consent is given. The student may decline; in that case, no face photo will be taken. Please capture only with the student's informed permission and follow the school's privacy and data-retention policies.</p>
+    <div style="display:flex;gap:8px">
+      <button type="button" class="icon-btn" style="flex:1;justify-content:center" onclick="declineFaceConsent()">Decline</button>
+      <button type="button" class="submit-btn" style="flex:1" onclick="acceptFaceConsent()">I Agree &amp; Proceed</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── CAMERA MODAL ── -->
 <div class="modal-overlay" id="cameraOverlay">
   <div class="modal-sheet">
@@ -1166,17 +1157,16 @@ if (isset($_GET['get_student'])) {
       <p class="modal-sub" id="cameraModalSub">Position and capture.</p>
     </div>
     <div id="cameraLive">
-      <div class="camera-preview-stage" id="cameraStage">
+      <div class="camera-preview-stage">
         <video id="cameraStream" autoplay playsinline muted></video>
-        <!-- Oblong guide: red when the face does not fit, green when it fits -->
-        <div class="face-oval" id="faceOval" aria-hidden="true"></div>
+        <div class="face-corner tl" aria-hidden="true"></div><div class="face-corner tr" aria-hidden="true"></div>
+        <div class="face-corner bl" aria-hidden="true"></div><div class="face-corner br" aria-hidden="true"></div>
+        <div class="face-guide-overlay" id="faceGuideOverlay" aria-hidden="true"><div class="face-oval" id="faceOval"></div></div>
+        <div class="face-detection-status" id="faceDetectionStatus" aria-live="polite">Initializing face detection…</div>
       </div>
       <div class="face-capture-bottom" id="faceCaptureBottom" style="display:none">
-        <div class="face-status info" id="faceStatus" role="status" aria-live="polite"></div>
-        <!-- Shutter is used for EVIDENCE photos only. It is never shown for face capture. -->
-        <div class="face-capture-actions" id="faceCaptureActions">
-          <button type="button" class="face-shutter" id="faceShutter" onclick="capturePhoto()" aria-label="Take photo"></button>
-        </div>
+        <div class="face-capture-actions"><button type="button" class="face-shutter" onclick="capturePhoto()" aria-label="Take photo"></button></div>
+        <div class="face-hint" id="faceCaptureHint">Keep your face inside the oval. The photo will be taken automatically when your face is aligned and steady.</div>
       </div>
       <div class="modal-row" id="standardCameraActions">
         <button type="button" class="icon-btn" onclick="stopCamera()">Cancel</button>
@@ -1210,31 +1200,6 @@ if (isset($_GET['get_student'])) {
     <div style="display:flex;gap:8px">
       <button type="button" class="icon-btn" style="flex:1;justify-content:center" onclick="closeConfirm()">Cancel</button>
       <button type="button" class="submit-btn" style="flex:2" onclick="doSubmit()">Confirm &amp; Submit</button>
-    </div>
-  </div>
-</div>
-
-<!-- ── FACE CAPTURE CONSENT MODAL ── -->
-<div class="modal-overlay modal-center" id="faceConsentOverlay">
-  <div class="modal-sheet" style="border-radius:var(--radius)">
-    <div class="confirm-icon">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
-    </div>
-    <p class="confirm-text" style="margin-bottom:14px">
-      <strong>Student Consent Required</strong>
-      Please hand the device to the student and let them read this notice.
-    </p>
-    <div class="consent-box">
-      By tapping <strong>Approve</strong>, I, the student named in this report, voluntarily consent to have my face photographed using this device. I understand that:
-      <ul>
-        <li>The photo is used only to verify my identity in this violation report.</li>
-        <li>It will be stored securely and viewed only by authorized school personnel.</li>
-        <li>It will not be shared with third parties or used for any other purpose.</li>
-      </ul>
-    </div>
-    <div style="display:flex;gap:8px">
-      <button type="button" class="icon-btn" style="flex:1;justify-content:center" onclick="closeFaceConsent()">Decline</button>
-      <button type="button" class="submit-btn" style="flex:2;margin-top:0" onclick="approveFaceConsent()">Approve</button>
     </div>
   </div>
 </div>
@@ -1307,301 +1272,140 @@ function clearCamEvidence() {
     document.getElementById('evidenceCamPreview').style.display = 'none';
 }
 
-/* ═══════════════════════════════════════════════════════════
-   AUTO FACE DETECTION (MediaPipe BlazeFace, with native
-   FaceDetector API as a fallback). Face capture is 100%
-   automatic: there is no manual shutter in face mode.
-   ═══════════════════════════════════════════════════════════ */
-const FACE_HOLD_MS      = 1500;   // how long the face must stay inside the oblong, steady, before auto-capture
-const FACE_MOVE_TOL     = 0.05;   // max drift allowed while holding (fraction of stage width)
-const DETECT_INTERVAL   = 120;    // ms between detection runs
-const DETECTOR_RETRY_MS = 3000;   // retry loading the detector if it failed (e.g. offline)
-const OVAL_RATIO        = 0.72;   // oblong width / height (smaller = taller and narrower)
-const MP_VERSION        = '0.10.14';
-const MP_BASE           = 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@' + MP_VERSION;
-const MP_MODEL          = 'https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite';
-
-let faceDetectorPromise = null;   // resolves to async (video) => {x,y,w,h} | null
-let faceLoopActive = false;
-let faceHoldStart = 0, faceAnchor = null, faceLastRun = 0, faceRetryTimer = null;
-
-function initFaceDetector() {
-    if (faceDetectorPromise) return faceDetectorPromise;
-    faceDetectorPromise = (async () => {
-        // 1) MediaPipe (works on all modern mobile browsers)
-        try {
-            const mod = await import(MP_BASE + '/vision_bundle.mjs');
-            const fileset = await mod.FilesetResolver.forVisionTasks(MP_BASE + '/wasm');
-            let detector;
-            try {
-                detector = await mod.FaceDetector.createFromOptions(fileset, {
-                    baseOptions: { modelAssetPath: MP_MODEL, delegate: 'GPU' },
-                    runningMode: 'VIDEO', minDetectionConfidence: 0.6
-                });
-            } catch (e) {
-                detector = await mod.FaceDetector.createFromOptions(fileset, {
-                    baseOptions: { modelAssetPath: MP_MODEL, delegate: 'CPU' },
-                    runningMode: 'VIDEO', minDetectionConfidence: 0.6
-                });
-            }
-            return async (video) => {
-                const res = detector.detectForVideo(video, performance.now());
-                const faces = (res.detections || []).map(d => d.boundingBox).filter(Boolean);
-                if (!faces.length) return { count: 0 };
-                const b = faces.sort((a, c) => (c.width * c.height) - (a.width * a.height))[0];
-                return { count: faces.length, x: b.originX, y: b.originY, w: b.width, h: b.height };
-            };
-        } catch (e) { console.warn('MediaPipe face detector failed:', e); }
-
-        // 2) Native Shape Detection API (Chromium, when enabled)
-        if ('FaceDetector' in window) {
-            try {
-                const native = new window.FaceDetector({ fastMode: true, maxDetectedFaces: 3 });
-                return async (video) => {
-                    const faces = await native.detect(video);
-                    if (!faces.length) return { count: 0 };
-                    const b = faces.map(f => f.boundingBox)
-                        .sort((a, c) => (c.width * c.height) - (a.width * a.height))[0];
-                    return { count: faces.length, x: b.x, y: b.y, w: b.width, h: b.height };
-                };
-            } catch (e) { console.warn('Native FaceDetector failed:', e); }
-        }
-        throw new Error('No face detector available');
-    })();
-    faceDetectorPromise.catch(() => { faceDetectorPromise = null; });  // allow retry next time
-    return faceDetectorPromise;
-}
-
-/* Oblong geometry in the preview stage's own pixel space */
-function getOval() {
-    const stage = document.getElementById('cameraStage');
-    const W = stage.clientWidth, H = stage.clientHeight;
-    let ry = H * 0.42, rx = ry * OVAL_RATIO;
-    if (rx > W * 0.44) { rx = W * 0.44; ry = rx / OVAL_RATIO; }
-    return { W, H, cx: W / 2, cy: H / 2, rx, ry };
-}
-function layoutOval() {
-    const o = getOval(), el = document.getElementById('faceOval');
-    el.style.width  = (o.rx * 2) + 'px';
-    el.style.height = (o.ry * 2) + 'px';
-}
-function setFaceUI(state, text) {          // state: 'bad' | 'ok' | 'info'
-    const oval = document.getElementById('faceOval');
-    const stat = document.getElementById('faceStatus');
-    oval.classList.toggle('ok', state === 'ok');
-    stat.classList.toggle('ok', state === 'ok');
-    stat.classList.toggle('info', state === 'info');
-    stat.textContent = text;
-}
-
-/* Does the detected face fit in the oblong? Returns {fit, msg, cx, cy} */
-function evaluateFace(box, video) {
-    const o = getOval();
-    const vw = video.videoWidth, vh = video.videoHeight;
-    // video is object-fit:cover → map video pixels to stage pixels
-    const scale = Math.max(o.W / vw, o.H / vh);
-    const ox = (o.W - vw * scale) / 2, oy = (o.H - vh * scale) / 2;
-    const x = box.x * scale + ox, y = box.y * scale + oy;
-    const w = box.w * scale,      h = box.h * scale;
-    const fcx = x + w / 2, fcy = y + h / 2;
-
-    const inside = (px, py) => {
-        const dx = (px - o.cx) / o.rx, dy = (py - o.cy) / o.ry;
-        return dx * dx + dy * dy <= 1;
-    };
-    const edgesInside = inside(fcx, y) && inside(fcx, y + h) && inside(x, fcy) && inside(x + w, fcy);
-    const hRatio = h / (o.ry * 2), wRatio = w / (o.rx * 2);
-    const tooSmall = hRatio < 0.50 || wRatio < 0.45;
-
-    let msg = '';
-    if (box.count > 1) msg = 'Only one face should be in view';
-    else if (tooSmall) msg = 'Move closer';
-    else if (!edgesInside) msg = hRatio > 0.85 ? 'Move back' : 'Center the face inside the oblong';
-
-    return { fit: !msg, msg, cx: fcx, cy: fcy, stageW: o.W };
-}
-
-function startFaceLoop() {
-    faceLoopActive = true; faceHoldStart = 0; faceAnchor = null; faceLastRun = 0;
-    clearTimeout(faceRetryTimer);
-    const video = document.getElementById('cameraStream');
-    setFaceUI('info', 'Starting face detection…');
-    layoutOval();
-
-    initFaceDetector().then(detect => {
-        if (!faceLoopActive) return;
-        setFaceUI('bad', 'Looking for a face…');
-
-        const tick = async (now) => {
-            if (!faceLoopActive) return;
-            if (now - faceLastRun >= DETECT_INTERVAL && video.readyState >= 2 && video.videoWidth) {
-                faceLastRun = now;
-                try {
-                    const box = await detect(video);
-                    if (!faceLoopActive) return;
-                    handleDetection(box, video, now);
-                } catch (e) { /* skip this frame */ }
-            }
-            requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-    }).catch(() => {
-        // Detection could not load (offline / blocked). There is no manual capture,
-        // so keep the camera open and retry automatically until it loads.
-        if (!faceLoopActive) return;
-        document.getElementById('faceOval').classList.remove('ok');
-        setFaceUI('info', 'Loading face detection… check your internet connection.');
-        faceRetryTimer = setTimeout(() => { if (faceLoopActive) startFaceLoop(); }, DETECTOR_RETRY_MS);
-    });
-}
-
-function handleDetection(box, video, now) {
-    if (!box || !box.count) {
-        faceHoldStart = 0; faceAnchor = null;
-        setFaceUI('bad', 'No face detected');
-        return;
-    }
-    const r = evaluateFace(box, video);
-    if (!r.fit) {
-        faceHoldStart = 0; faceAnchor = null;
-        setFaceUI('bad', r.msg);
-        return;
-    }
-    // Fits → require the face to stay steady for FACE_HOLD_MS
-    const moved = faceAnchor &&
-        Math.hypot(r.cx - faceAnchor.x, r.cy - faceAnchor.y) > r.stageW * FACE_MOVE_TOL;
-    if (!faceAnchor || moved) {
-        faceAnchor = { x: r.cx, y: r.cy };
-        faceHoldStart = now;
-    }
-    const remaining = Math.max(0, FACE_HOLD_MS - (now - faceHoldStart));
-    if (remaining <= 0) {
-        setFaceUI('ok', 'Captured!');
-        stopFaceLoop();
-        capturePhoto();
-        return;
-    }
-    setFaceUI('ok', 'Hold still… ' + Math.ceil(remaining / 1000));
-}
-
-function stopFaceLoop() {
-    faceLoopActive = false; faceHoldStart = 0; faceAnchor = null;
-    clearTimeout(faceRetryTimer);
-}
-
-/* ── FACE CAPTURE CONSENT ── */
-function openFaceConsent() {
-    document.getElementById('faceConsentOverlay').classList.add('active');
-}
-function closeFaceConsent() {
-    document.getElementById('faceConsentOverlay').classList.remove('active');
-}
-function approveFaceConsent() {
-    closeFaceConsent();
-    openCamera('face');   // camera only opens after the student approves
-}
-
-/* ── CAMERA ── */
+/* ── CAMERA + AUTOMATIC FACE ALIGNMENT ── */
 let stream = null, cameraMode = '', evidenceCamData = null;
+let faceDetectionTimer = null, faceStableSince = 0, previousFaceCenter = null;
+let faceCaptureInProgress = false, faceDetectorReady = false;
+const FACE_MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
 
-function openCamera(mode) {
-    cameraMode = mode;
-    const isFace = mode === 'face';
-    document.getElementById('cameraModalTitle').textContent =
-        isFace ? 'Capture Student Face' : 'Take Photo Evidence';
-    document.getElementById('cameraModalSub').textContent =
-        isFace ? 'Fit the face inside the oblong. It turns green and captures automatically when you hold steady.' : 'Capture the evidence clearly.';
-    document.getElementById('cameraLive').style.display = 'flex';
-    document.getElementById('cameraReview').style.display = 'none';
-    const overlay = document.getElementById('cameraOverlay');
-    overlay.classList.toggle('face-capture-mode', isFace);
-    overlay.classList.toggle('evidence-capture-mode', !isFace);
-    document.getElementById('faceOval').style.display = isFace ? 'block' : 'none';
-    document.getElementById('faceStatus').style.display = isFace ? 'block' : 'none';
-    // Face mode is fully automatic: the shutter (and its container) is removed.
-    // Evidence mode keeps the manual shutter.
-    document.getElementById('faceShutter').style.display = isFace ? 'none' : 'block';
-    document.getElementById('faceCaptureActions').style.display = isFace ? 'none' : 'flex';
-    document.getElementById('faceCaptureTopbar').style.display = 'flex';
-    document.getElementById('faceCaptureHeading').style.display = 'block';
-    document.getElementById('faceCaptureBottom').style.display = 'block';
-    document.getElementById('standardCameraActions').style.display = 'none';
-
-    // Use the back camera for both face capture and evidence.
-    const constraints = {
-        video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 960 }
+function showFaceConsent(){document.getElementById('faceConsentOverlay').classList.add('active');}
+function declineFaceConsent(){document.getElementById('faceConsentOverlay').classList.remove('active');}
+async function acceptFaceConsent(){
+  document.getElementById('faceConsentOverlay').classList.remove('active');
+  if(await loadFaceDetector()) openCamera('face');
+}
+async function loadFaceDetector(){
+  if(faceDetectorReady)return true;
+  if(!window.faceapi){alert('Face detection could not be loaded. Check your internet connection and try again.');return false;}
+  try{await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_URL);faceDetectorReady=true;return true;}
+  catch(e){console.error(e);alert('Face detection model could not be loaded. Please check your internet connection and try again.');return false;}
+}
+function resetFaceDetection(){
+  if(faceDetectionTimer)cancelAnimationFrame(faceDetectionTimer);
+  faceDetectionTimer=null;faceStableSince=0;previousFaceCenter=null;faceCaptureInProgress=false;
+  const oval=document.getElementById('faceOval'),status=document.getElementById('faceDetectionStatus');
+  if(oval)oval.className='face-oval';
+  if(status){status.className='face-detection-status';status.textContent='Looking for a face…';}
+}
+function updateFaceStatus(state,message){
+  const oval=document.getElementById('faceOval'),status=document.getElementById('faceDetectionStatus');
+  if(!oval||!status)return;
+  oval.className='face-oval'+(state==='good'?' good':state==='bad'?' out':'');
+  status.className='face-detection-status'+(state==='good'?' good':state==='bad'?' bad':'');
+  status.textContent=message;
+}
+function faceFitsGuide(box,video){
+  const cx=(box.x+box.width/2)/video.videoWidth,cy=(box.y+box.height/2)/video.videoHeight;
+  const w=box.width/video.videoWidth,h=box.height/video.videoHeight;
+  const nx=(cx-.5)/.27,ny=(cy-.48)/.36;
+  return nx*nx+ny*ny<=.48 && w<=.58 && h<=.76 && cx>.20 && cx<.80 && cy>.12 && cy<.88;
+}
+async function detectFaceContinuously(){
+  if(cameraMode!=='face'||!stream||faceCaptureInProgress)return;
+  const video=document.getElementById('cameraStream');
+  if(!video||video.readyState<2||!faceDetectorReady){faceDetectionTimer=requestAnimationFrame(detectFaceContinuously);return;}
+  try{
+    const detections=await faceapi.detectAllFaces(video,new faceapi.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:.55}));
+    if(detections.length!==1){
+      faceStableSince=0;previousFaceCenter=null;
+      updateFaceStatus('bad',detections.length>1?'Only one face should be visible':'Move your face into the oval');
+    }else{
+      const box=detections[0].box;
+      if(!faceFitsGuide(box,video)){
+        faceStableSince=0;previousFaceCenter=null;
+        updateFaceStatus('bad','Face does not fit. Move into the center of the oval');
+      }else{
+        const center={x:box.x+box.width/2,y:box.y+box.height/2};
+        const movement=previousFaceCenter?Math.hypot(center.x-previousFaceCenter.x,center.y-previousFaceCenter.y)/Math.hypot(video.videoWidth,video.videoHeight):1;
+        previousFaceCenter=center;
+        if(movement>.018){faceStableSince=performance.now();updateFaceStatus('good','Good position — hold still…');}
+        else{
+          if(!faceStableSince)faceStableSince=performance.now();
+          const remaining=Math.max(0,1200-(performance.now()-faceStableSince));
+          updateFaceStatus('good',remaining>0?`Perfect — hold still for ${(remaining/1000).toFixed(1)}s`:'Capturing photo…');
+          if(remaining<=0){faceCaptureInProgress=true;capturePhoto();return;}
         }
-    };
-    navigator.mediaDevices.getUserMedia(constraints)
-        .then(s => {
-            stream = s;
-            const video = document.getElementById('cameraStream');
-            video.srcObject = s;
-            document.getElementById('cameraOverlay').classList.add('active');
-            if (isFace) {
-                layoutOval();
-                startFaceLoop();
-            }
-        })
-        .catch(() => alert('Camera not accessible. Please allow camera permission.'));
-}
-
-function capturePhoto() {
-    stopFaceLoop();
-    const video = document.getElementById('cameraStream');
-    const canvas = document.getElementById('cameraCanvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    document.getElementById('capturedImgEl').src = canvas.toDataURL('image/png');
-    document.getElementById('cameraLive').style.display = 'none';
-    document.getElementById('cameraReview').style.display = 'flex';
-}
-
-function retakePhoto() {
-    document.getElementById('cameraLive').style.display = 'flex';
-    document.getElementById('cameraReview').style.display = 'none';
-    if (cameraMode === 'face') {
-        layoutOval();
-        startFaceLoop();
+      }
     }
+  }catch(e){console.warn(e);updateFaceStatus('bad','Unable to detect face. Adjust lighting and try again');}
+  faceDetectionTimer=requestAnimationFrame(detectFaceContinuously);
 }
-
-function confirmPhoto() {
-    const data = document.getElementById('cameraCanvas').toDataURL('image/png');
-    if (cameraMode === 'face') {
-        document.getElementById('faceCaptureData').value = data;
-        document.getElementById('faceCapturePreview').innerHTML =
-            `<img src="${data}" class="face-thumb" alt="Face capture">`;
-        document.getElementById('faceCaptureBtn').classList.add('active');
-    } else {
-        evidenceCamData = data;
-        document.getElementById('evidenceCaptureData').value = data;
-        // Keep the evidence source unambiguous: using the camera clears any chosen file.
-        document.getElementById('evidenceFile').value = '';
-        document.getElementById('fileNameLabel').textContent = 'Choose an image…';
-        document.getElementById('evidencePreview').style.display = 'none';
-        document.getElementById('evidenceCamImg').src = data;
-        document.getElementById('evidenceCamPreview').style.display = 'block';
-    }
-    stopCamera();
+async function openCamera(mode){
+  cameraMode=mode;
+  document.getElementById('cameraModalTitle').textContent=mode==='face'?'Capture Student Face':'Take Photo Evidence';
+  document.getElementById('cameraModalSub').textContent=mode==='face'?'Align your face inside the oval and hold still for automatic capture.':'Capture the evidence clearly.';
+  document.getElementById('cameraLive').style.display='flex';
+  document.getElementById('cameraReview').style.display='none';
+  const overlay=document.getElementById('cameraOverlay');
+  overlay.classList.toggle('face-capture-mode',mode==='face');
+  overlay.classList.toggle('evidence-capture-mode',mode==='evidence');
+  document.getElementById('faceGuideOverlay').style.display=mode==='face'?'block':'none';
+  document.getElementById('faceDetectionStatus').style.display=mode==='face'?'block':'none';
+  document.getElementById('faceCaptureTopbar').style.display='flex';
+  document.getElementById('faceCaptureHeading').style.display='block';
+  document.getElementById('faceCaptureBottom').style.display=mode==='face'?'block':'none';
+  document.getElementById('standardCameraActions').style.display=mode==='evidence'?'flex':'none';
+  resetFaceDetection();
+  try{
+    const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:mode==='face'?{ideal:'user'}:{ideal:'environment'},width:{ideal:1280},height:{ideal:960}}});
+    stream=s;
+    const video=document.getElementById('cameraStream');video.srcObject=s;
+    overlay.classList.add('active');await video.play();
+    if(mode==='face'){updateFaceStatus('neutral','Looking for a face…');faceDetectionTimer=requestAnimationFrame(detectFaceContinuously);}
+  }catch(e){console.error(e);alert('Camera not accessible. Allow camera permission and use a secure HTTPS connection.');stopCamera();}
 }
-
-function stopCamera() {
-    stopFaceLoop();
-    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-    const overlay = document.getElementById('cameraOverlay');
-    overlay.classList.remove('active', 'face-capture-mode', 'evidence-capture-mode');
-    document.getElementById('faceOval').style.display = 'none';
-    document.getElementById('faceStatus').style.display = 'none';
+function capturePhoto(){
+  if(cameraMode==='face'&&!faceCaptureInProgress)return;
+  const video=document.getElementById('cameraStream'),canvas=document.getElementById('cameraCanvas');
+  if(!video.videoWidth||!video.videoHeight)return;
+  canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+  const ctx=canvas.getContext('2d');
+  if(cameraMode==='face'){ctx.translate(canvas.width,0);ctx.scale(-1,1);}
+  ctx.drawImage(video,0,0);
+  document.getElementById('capturedImgEl').src=canvas.toDataURL('image/png');
+  document.getElementById('cameraLive').style.display='none';
+  document.getElementById('cameraReview').style.display='flex';
+  if(faceDetectionTimer)cancelAnimationFrame(faceDetectionTimer);faceDetectionTimer=null;
 }
-
-window.addEventListener('resize', () => { if (faceLoopActive) layoutOval(); });
-// Warm up the detector in the background so the camera starts faster
-window.addEventListener('load', () => { initFaceDetector().catch(() => {}); });
+function retakePhoto(){
+  document.getElementById('cameraLive').style.display='flex';
+  document.getElementById('cameraReview').style.display='none';
+  if(cameraMode==='face'){resetFaceDetection();faceDetectionTimer=requestAnimationFrame(detectFaceContinuously);}
+}
+function confirmPhoto(){
+  const data=document.getElementById('cameraCanvas').toDataURL('image/png');
+  if(cameraMode==='face'){
+    document.getElementById('faceCaptureData').value=data;
+    document.getElementById('faceCapturePreview').innerHTML=`<img src="${data}" class="face-thumb" alt="Captured student face">`;
+    document.getElementById('faceCaptureBtn').classList.add('active');
+  }else{
+    evidenceCamData=data;document.getElementById('evidenceCaptureData').value=data;
+    document.getElementById('evidenceFile').value='';
+    document.getElementById('fileNameLabel').textContent='Choose an image…';
+    document.getElementById('evidencePreview').style.display='none';
+    document.getElementById('evidenceCamImg').src=data;
+    document.getElementById('evidenceCamPreview').style.display='block';
+  }
+  stopCamera();
+}
+function stopCamera(){
+  if(faceDetectionTimer)cancelAnimationFrame(faceDetectionTimer);faceDetectionTimer=null;
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  document.getElementById('cameraOverlay').classList.remove('active','face-capture-mode','evidence-capture-mode');
+  document.getElementById('faceGuideOverlay').style.display='none';
+  document.getElementById('faceDetectionStatus').style.display='none';
+  resetFaceDetection();
+}
 
 /* ── SIGNATURE ── */
 const sigCanvas = document.getElementById('signatureCanvas');
@@ -1719,9 +1523,6 @@ document.getElementById('cameraOverlay').addEventListener('click', function(e){
 });
 document.getElementById('confirmOverlay').addEventListener('click', function(e){
     if (e.target === this) closeConfirm();
-});
-document.getElementById('faceConsentOverlay').addEventListener('click', function(e){
-    if (e.target === this) closeFaceConsent();
 });
 </script>
 <script>
