@@ -755,6 +755,8 @@ if (isset($_GET['get_student'])) {
   #cameraOverlay.evidence-capture-mode #cameraStream { position:absolute; inset:0; width:100%; height:100%; max-height:none; aspect-ratio:auto; object-fit:cover; border-radius:0; }
   #cameraOverlay.evidence-capture-mode .face-corner, #cameraOverlay.evidence-capture-mode .face-guide-overlay { display:none !important; }
   #cameraOverlay.evidence-capture-mode #standardCameraActions { display:flex !important; }
+  #cameraOverlay.evidence-capture-mode .face-capture-bottom { display:none !important; }
+  #cameraOverlay.face-capture-mode #standardCameraActions { display:none !important; }
   #cameraOverlay.evidence-capture-mode .face-capture-bottom { display:block; flex-shrink:0; padding-top:16px; }
   #cameraOverlay.evidence-capture-mode .face-capture-actions { display:flex; justify-content:center; align-items:center; padding:8px 0 max(8px, env(safe-area-inset-bottom)); }
   #cameraOverlay.evidence-capture-mode .face-shutter { width:clamp(76px, 12vw, 112px); height:clamp(76px, 12vw, 112px); border-radius:50%; border:7px solid #f8faff; background:#287cf4; box-shadow:inset 0 0 0 5px #0d1b32; cursor:pointer; padding:0; }
@@ -1430,7 +1432,7 @@ async function detectFaceContinuously(){
 async function openCamera(mode){
   cameraMode=mode;
   document.getElementById('cameraModalTitle').textContent=mode==='face'?'Capture Student Face':'Take Photo Evidence';
-  document.getElementById('cameraModalSub').textContent=mode==='face'?'Use the back camera. Position the student's face inside the oval and hold still for automatic capture.':'Capture the evidence clearly.';
+  document.getElementById('cameraModalSub').textContent=mode==='face'?'Use the back camera. Position the student face inside the oval and hold still for automatic capture.':'Capture the evidence clearly.';
   document.getElementById('cameraLive').style.display='flex';
   document.getElementById('cameraReview').style.display='none';
   const overlay=document.getElementById('cameraOverlay');
@@ -1442,12 +1444,30 @@ async function openCamera(mode){
   document.getElementById('faceCaptureHeading').style.display='block';
   document.getElementById('faceCaptureBottom').style.display=mode==='face'?'block':'none';
   document.getElementById('standardCameraActions').style.display=mode==='evidence'?'flex':'none';
+
+  // Keep the two camera modes separate: evidence uses a manual shutter,
+  // while face capture uses automatic detection and never shows a manual shutter.
+  document.getElementById('faceCaptureBottom').style.display=mode==='face'?'block':'none';
+  document.getElementById('standardCameraActions').style.display=mode==='evidence'?'flex':'none';
+
   resetFaceDetection();
+
+  // Show the modal before requesting permission so the user sees the camera
+  // interface even while the browser is waiting for camera access.
+  overlay.classList.add('active');
+
   try{
-    const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:960}}});
+    const s=await navigator.mediaDevices.getUserMedia({
+      video:{
+        facingMode: mode==='face' ? {ideal:'environment'} : {ideal:'environment'},
+        width:{ideal:1280},
+        height:{ideal:960}
+      }
+    });
     stream=s;
-    const video=document.getElementById('cameraStream');video.srcObject=s;
-    overlay.classList.add('active');await video.play();
+    const video=document.getElementById('cameraStream');
+    video.srcObject=s;
+    await video.play();
     if(mode==='face'){updateFaceStatus('neutral','Looking for a face…');faceDetectionTimer=requestAnimationFrame(detectFaceContinuously);}
   }catch(e){console.error(e);alert('Camera not accessible. Allow camera permission and use a secure HTTPS connection.');stopCamera();}
 }
