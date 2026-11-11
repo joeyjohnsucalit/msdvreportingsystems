@@ -708,7 +708,7 @@ if (isset($_GET['get_student'])) {
   }
   #cameraOverlay.face-capture-mode #cameraStream { position:absolute; inset:0; width:100%; height:100%; max-height:none; aspect-ratio:auto; object-fit:cover; border-radius:0; }
   #cameraOverlay.face-capture-mode .face-guide-overlay { position:absolute; z-index:2; inset:0; display:block; pointer-events:none; }
-  #cameraOverlay.face-capture-mode .face-oval { position:absolute; left:50%; top:48%; transform:translate(-50%,-50%); width:min(58%,390px); height:min(78%,620px); border:4px solid #f5b942; border-radius:50% / 46%; box-shadow:0 0 0 9999px rgba(0,0,0,.20); transition:border-color .18s,box-shadow .18s; }
+  #cameraOverlay.face-capture-mode .face-oval { position:absolute; left:50%; top:48%; transform:translate(-50%,-50%); width:min(58%,390px); height:min(65%,520px); border:4px solid #f5b942; border-radius:50% / 46%; box-shadow:0 0 0 9999px rgba(0,0,0,.20); transition:border-color .18s,box-shadow .18s; }
   #cameraOverlay.face-capture-mode .face-oval.out { border-color:#ef4444; box-shadow:0 0 0 9999px rgba(0,0,0,.25),0 0 18px rgba(239,68,68,.35); }
   #cameraOverlay.face-capture-mode .face-oval.good { border-color:#22c55e; box-shadow:0 0 0 9999px rgba(0,0,0,.18),0 0 22px rgba(34,197,94,.5); }
   #cameraOverlay.face-capture-mode .face-detection-status { flex-shrink:0; text-align:center; padding:12px 8px 0; color:#f5b942; font-size:14px; font-weight:650; }
