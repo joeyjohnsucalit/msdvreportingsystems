@@ -2,7 +2,7 @@
 session_start();
 require_once '../db/connection.php';
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'student') {
-    header('Location: ../index.php'); exit;
+    header('Location: ../login.php'); exit;
 }
 
 // FIRST LOGIN change password
