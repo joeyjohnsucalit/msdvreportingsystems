@@ -4,7 +4,7 @@ require_once '../db/connection.php';
 require_once '../db/image_storage.php';
 $allowedRoles = ['teacher','csu','jassu','nurse','student'];
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], $allowedRoles)) {
-    header('Location: ../index.php'); exit;
+    header('Location: ../login.php'); exit;
 }
 
 $role = $_SESSION['role'];
@@ -43,10 +43,10 @@ if ($role === 'student') {
 
 // SUBMIT REPORT
 if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
-    $sid         = trim($_POST['student_id']);
-    $category    = $_POST['category'];
-    $violation   = trim($_POST['violation']);
-    $description = trim($_POST['description']);
+    $sid         = trim($_POST['student_id'] ?? '');
+    $category    = $_POST['category'] ?? '';
+    $violation   = trim($_POST['violation'] ?? '');
+    $description = trim($_POST['description'] ?? '');
 
     $sCheck = $pdo->prepare("SELECT * FROM students WHERE student_id=?");
     $sCheck->execute([$sid]);
@@ -56,13 +56,18 @@ if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
         $err = 'Student ID not found in records.';
     } elseif ($ownSid && $ownSid === $sid) {
         $err = 'You cannot report yourself.';
+    } elseif (!in_array($category, ['minor', 'major'], true)) {
+        $err = 'Invalid violation category.';
+    } elseif ($violation === '') {
+        $err = 'Please select a violation.';
+    } elseif (empty($_POST['face_capture_data'])) {
+        $err = 'Student face capture is required before submitting this report.';
     } else {
-        // Evidence can come from either the file picker OR the camera.
+        // Evidence is optional and can come from either the file picker OR the camera.
         // Images are stored in TiDB (stored_images table) so they survive redeploys.
         $evidenceBytes = null;
-
-        // Prefer a successfully uploaded file when one was selected.
         $uploadError = $_FILES['evidence']['error'] ?? UPLOAD_ERR_NO_FILE;
+
         if ($uploadError !== UPLOAD_ERR_NO_FILE && $uploadError !== UPLOAD_ERR_OK) {
             $uploadErrors = [
                 UPLOAD_ERR_INI_SIZE   => 'The selected image is larger than the server upload limit.',
@@ -83,88 +88,168 @@ if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
                 }
             }
         } elseif (!empty($_POST['evidence_capture_data'])) {
-            // Camera photos are sent as a base64 data URL in a hidden form field.
             $evidenceBytes = decodeImageDataUrl($_POST['evidence_capture_data']);
             if ($evidenceBytes === null) {
                 $err = 'The captured evidence image data is invalid.';
             }
         }
 
-        if (!$err && $evidenceBytes === null) {
-            $err = 'No evidence image was received. Please choose an image or take a photo, confirm the preview, and submit again.';
+        // Evidence photo is optional. A report may be submitted without it.
+
+        $faceBytes = decodeImageDataUrl($_POST['face_capture_data'] ?? '');
+        if (!$err && $faceBytes === null) {
+            $err = 'Student face capture is required. Please capture and confirm the student face.';
         }
 
         $evidencePath = $facePath = $sigPath = null;
+
+        // Store uploaded images using the existing image-storage helper.
         if (!$err) {
             try {
-                $evidencePath = storeImage($pdo, $evidenceBytes, 'evidence');
-
-                if (!empty($_POST['face_capture_data'])) {
-                    $faceBytes = decodeImageDataUrl($_POST['face_capture_data']);
-                    if ($faceBytes !== null) $facePath = storeImage($pdo, $faceBytes, 'face');
+                if ($evidenceBytes !== null) {
+                    $evidencePath = storeImage($pdo, $evidenceBytes, 'evidence');
                 }
+
+                // Face capture is mandatory for every submitted report.
+                $facePath = storeImage($pdo, $faceBytes, 'face');
 
                 if (!empty($_POST['signature_data'])) {
                     $sigBytes = decodeImageDataUrl($_POST['signature_data']);
-                    if ($sigBytes !== null) $sigPath = storeImage($pdo, $sigBytes, 'signature');
+                    if ($sigBytes !== null) {
+                        $sigPath = storeImage($pdo, $sigBytes, 'signature');
+                    }
                 }
             } catch (RuntimeException $e) {
                 $err = 'Evidence image: ' . $e->getMessage();
             } catch (PDOException $e) {
-                error_log($e->getMessage());
+                error_log('MSDV IMAGE STORAGE ERROR: ' . $e->getMessage());
                 $err = 'The images could not be saved to the database. Please try again.';
             }
         }
 
         if (!$err) {
+            try {
+                // Keep the violation, disciplinary action, and notification together.
+                $pdo->beginTransaction();
 
-        $pdo->prepare("INSERT INTO violations (student_id,reporter_id,category,violation,description,evidence_path,face_capture_path,signature_path) VALUES (?,?,?,?,?,?,?,?)")
-            ->execute([$sid, $_SESSION['user_id'], $category, $violation, $description, $evidencePath, $facePath, $sigPath]);
+                // 1. Insert the violation.
+                $insertViolation = $pdo->prepare("
+                    INSERT INTO violations
+                    (student_id, reporter_id, category, violation, description, evidence_path, face_capture_path, signature_path)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                $insertViolation->execute([
+                    $sid,
+                    $_SESSION['user_id'],
+                    $category,
+                    $violation,
+                    $description,
+                    $evidencePath,
+                    $facePath,
+                    $sigPath
+                ]);
 
-        $violationId = $pdo->lastInsertId();
+                // 2. Read the generated ID from the same database connection.
+                // TiDB's LAST_INSERT_ID() is used instead of trusting a possibly
+                // unexpected PDO::lastInsertId() response.
+                $violationId = (int) $pdo->query("SELECT LAST_INSERT_ID()")->fetchColumn();
 
-        // Offense counts (prepared statements instead of string interpolation)
-        $cntStmt = $pdo->prepare("SELECT COUNT(*) FROM violations WHERE student_id=? AND category=?");
-        $cntStmt->execute([$sid, 'minor']);
-        $minorCount = (int)$cntStmt->fetchColumn();
-        $cntStmt->execute([$sid, 'major']);
-        $majorCount = (int)$cntStmt->fetchColumn();
+                if ($violationId <= 0) {
+                    throw new RuntimeException('TiDB did not return a valid new violation ID.');
+                }
 
-        $sanction = '';
-        if ($category === 'minor') {
-            $offense = $minorCount;
-            if ($offense == 1)      $sanction = 'First Offense: Verbal Warning and Counseling';
-            elseif ($offense == 2)  $sanction = 'Second Offense: Written Warning and Reflective Essay';
-            elseif ($offense == 3)  $sanction = 'Third Offense: Community Service 5-10 hours and Parental Notification';
-            elseif ($offense == 4)  $sanction = 'Fourth Offense: Short-term Suspension 1-3 days and Mandatory Workshop';
-            elseif ($offense >= 5)  $sanction = 'Fifth Offense: Long-term Suspension 1 week and Disciplinary Probation';
-        } else {
-            $offense = $majorCount;
-            if ($offense == 1) {
-                $sanction = $violation === 'Academic Dishonesty'
-                    ? 'First Major Offense (Academic Dishonesty): Failing grade for the course and Mandatory Ethics Workshop'
-                    : 'First Major Offense: Suspension (1 week to 1 month) and Mandatory Counseling';
-            } elseif ($offense == 2) {
-                $sanction = $violation === 'Academic Dishonesty'
-                    ? 'Second Major Offense (Academic Dishonesty): Suspension for 1 Semester'
-                    : 'Second Major Offense: Suspension (1 month to 1 semester) and Extended Counseling';
-            } elseif ($offense >= 3) {
-                $sanction = $violation === 'Academic Dishonesty'
-                    ? 'Third Major Offense (Academic Dishonesty): Expulsion'
-                    : 'Third Major Offense: Expulsion and Notification to Authorities if Applicable';
+                // Confirm that this ID belongs to the row just inserted.
+                $verifyViolation = $pdo->prepare("SELECT id FROM violations WHERE id = ? LIMIT 1");
+                $verifyViolation->execute([$violationId]);
+                if (!$verifyViolation->fetchColumn()) {
+                    throw new RuntimeException('The generated violation ID was not found in the violations table.');
+                }
+
+                // 3. Count the student's offenses, including the new violation.
+                $cntStmt = $pdo->prepare("SELECT COUNT(*) FROM violations WHERE student_id = ? AND category = ?");
+                $cntStmt->execute([$sid, 'minor']);
+                $minorCount = (int) $cntStmt->fetchColumn();
+                $cntStmt->execute([$sid, 'major']);
+                $majorCount = (int) $cntStmt->fetchColumn();
+
+                // 4. Determine the sanction using the existing MSDV rules.
+                $sanction = '';
+
+                if ($category === 'minor') {
+                    $offense = $minorCount;
+                    if ($offense === 1) {
+                        $sanction = 'First Offense: Verbal Warning and Counseling';
+                    } elseif ($offense === 2) {
+                        $sanction = 'Second Offense: Written Warning and Reflective Essay';
+                    } elseif ($offense === 3) {
+                        $sanction = 'Third Offense: Community Service 5-10 hours and Parental Notification';
+                    } elseif ($offense === 4) {
+                        $sanction = 'Fourth Offense: Short-term Suspension 1-3 days and Mandatory Workshop';
+                    } elseif ($offense >= 5) {
+                        $sanction = 'Fifth Offense: Long-term Suspension 1 week and Disciplinary Probation';
+                    }
+                } else {
+                    $offense = $majorCount;
+                    if ($offense === 1) {
+                        $sanction = $violation === 'Academic Dishonesty'
+                            ? 'First Major Offense (Academic Dishonesty): Failing grade for the course and Mandatory Ethics Workshop'
+                            : 'First Major Offense: Suspension (1 week to 1 month) and Mandatory Counseling';
+                    } elseif ($offense === 2) {
+                        $sanction = $violation === 'Academic Dishonesty'
+                            ? 'Second Major Offense (Academic Dishonesty): Suspension for 1 Semester'
+                            : 'Second Major Offense: Suspension (1 month to 1 semester) and Extended Counseling';
+                    } elseif ($offense >= 3) {
+                        $sanction = $violation === 'Academic Dishonesty'
+                            ? 'Third Major Offense (Academic Dishonesty): Expulsion'
+                            : 'Third Major Offense: Expulsion and Notification to Authorities if Applicable';
+                    }
+                }
+
+                if ($sanction === '') {
+                    throw new RuntimeException('Could not determine a sanction for this offense.');
+                }
+
+                // 5. Prevent a duplicate action for this exact violation.
+                $checkAction = $pdo->prepare("SELECT id FROM disciplinary_actions WHERE violation_id = ? LIMIT 1");
+                $checkAction->execute([$violationId]);
+                if ($checkAction->fetchColumn()) {
+                    throw new RuntimeException('A disciplinary action already exists for new violation ID ' . $violationId . '.');
+                }
+
+                // 6. Insert the disciplinary action.
+                $insertAction = $pdo->prepare("
+                    INSERT INTO disciplinary_actions (violation_id, student_id, sanction, status)
+                    VALUES (?, ?, ?, 'pending')
+                ");
+                $insertAction->execute([$violationId, $sid, $sanction]);
+
+                // 7. Notify the administrator, if an admin account exists.
+                $adminId = $pdo->query("SELECT id FROM users WHERE role = 'admin' LIMIT 1")->fetchColumn();
+                if ($adminId) {
+                    $notify = $pdo->prepare("
+                        INSERT INTO notifications (user_id, message, link)
+                        VALUES (?, ?, ?)
+                    ");
+                    $notify->execute([
+                        $adminId,
+                        "New violation reported for student $sid by " . ($_SESSION['full_name'] ?? 'a user'),
+                        '../admin/violation-records.php'
+                    ]);
+                }
+
+                $pdo->commit();
+                $_SESSION['report_success'] = true;
+                header('Location: report-form.php');
+                exit;
+
+            } catch (Throwable $e) {
+                if ($pdo->inTransaction()) {
+                    $pdo->rollBack();
+                }
+                error_log('MSDV REPORT SUBMISSION ERROR: ' . $e->getMessage());
+                $err = 'The report could not be submitted. Please try again. If the problem continues, contact the system administrator.';
             }
         }
-
-        $pdo->prepare("INSERT INTO disciplinary_actions (violation_id,student_id,sanction,status) VALUES (?,?,?,'pending')")
-            ->execute([$violationId, $sid, $sanction]);
-
-        $adminId = $pdo->query("SELECT id FROM users WHERE role='admin' LIMIT 1")->fetchColumn();
-        $pdo->prepare("INSERT INTO notifications (user_id,message,link) VALUES (?,?,?)")
-            ->execute([$adminId, "New violation reported for student $sid by " . $_SESSION['full_name'], '../admin/violation-records.php']);
-
-        $_SESSION['report_success'] = true;
-        header('Location: report-form.php'); exit;
-        } // end if (!$err): evidence could be saved successfully
     }
 }
 
@@ -617,7 +702,14 @@ if (isset($_GET['get_student'])) {
     background:#000; border-radius:0; margin:24px 0 0;
   }
   #cameraOverlay.face-capture-mode #cameraStream { position:absolute; inset:0; width:100%; height:100%; max-height:none; aspect-ratio:auto; object-fit:cover; border-radius:0; }
-  #cameraOverlay.face-capture-mode .face-guide-overlay { position:absolute; z-index:2; width:min(64vw, 560px); height:84%; max-height:84%; object-fit:contain; opacity:.92; pointer-events:none; filter:drop-shadow(0 0 2px rgba(0,0,0,.7)); }
+  #cameraOverlay.face-capture-mode .face-guide-overlay { position:absolute; z-index:2; inset:0; display:block; pointer-events:none; }
+  #cameraOverlay.face-capture-mode .face-oval { position:absolute; left:50%; top:48%; transform:translate(-50%,-50%); width:min(58%,390px); height:min(78%,620px); border:4px solid #f5b942; border-radius:50% / 46%; box-shadow:0 0 0 9999px rgba(0,0,0,.20); transition:border-color .18s,box-shadow .18s; }
+  #cameraOverlay.face-capture-mode .face-oval.out { border-color:#ef4444; box-shadow:0 0 0 9999px rgba(0,0,0,.25),0 0 18px rgba(239,68,68,.35); }
+  #cameraOverlay.face-capture-mode .face-oval.good { border-color:#22c55e; box-shadow:0 0 0 9999px rgba(0,0,0,.18),0 0 22px rgba(34,197,94,.5); }
+  #cameraOverlay.face-capture-mode .face-detection-status { flex-shrink:0; text-align:center; padding:12px 8px 0; color:#f5b942; font-size:14px; font-weight:650; }
+  #cameraOverlay.face-capture-mode .face-detection-status.good { color:#4ade80; }
+  #cameraOverlay.face-capture-mode .face-detection-status.bad { color:#f87171; }
+  #cameraOverlay.face-capture-mode .face-shutter { display:none !important; }
   .face-corner { display:none; }
   #cameraOverlay.face-capture-mode .face-corner { display:block; position:absolute; z-index:3; width:clamp(40px, 11vw, 108px); height:clamp(40px, 11vw, 108px); pointer-events:none; }
   #cameraOverlay.face-capture-mode .face-corner:before, #cameraOverlay.face-capture-mode .face-corner:after { content:""; position:absolute; display:block; background:#2582ff; border-radius:5px; }
@@ -662,7 +754,9 @@ if (isset($_GET['get_student'])) {
   #cameraOverlay.evidence-capture-mode .camera-preview-stage { position:relative; flex:1; min-height:220px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#000; border-radius:0; margin:24px 0 0; }
   #cameraOverlay.evidence-capture-mode #cameraStream { position:absolute; inset:0; width:100%; height:100%; max-height:none; aspect-ratio:auto; object-fit:cover; border-radius:0; }
   #cameraOverlay.evidence-capture-mode .face-corner, #cameraOverlay.evidence-capture-mode .face-guide-overlay { display:none !important; }
-  #cameraOverlay.evidence-capture-mode #standardCameraActions { display:none !important; }
+  #cameraOverlay.evidence-capture-mode #standardCameraActions { display:flex !important; }
+  #cameraOverlay.evidence-capture-mode .face-capture-bottom { display:none !important; }
+  #cameraOverlay.face-capture-mode #standardCameraActions { display:none !important; }
   #cameraOverlay.evidence-capture-mode .face-capture-bottom { display:block; flex-shrink:0; padding-top:16px; }
   #cameraOverlay.evidence-capture-mode .face-capture-actions { display:flex; justify-content:center; align-items:center; padding:8px 0 max(8px, env(safe-area-inset-bottom)); }
   #cameraOverlay.evidence-capture-mode .face-shutter { width:clamp(76px, 12vw, 112px); height:clamp(76px, 12vw, 112px); border-radius:50%; border:7px solid #f8faff; background:#287cf4; box-shadow:inset 0 0 0 5px #0d1b32; cursor:pointer; padding:0; }
@@ -788,6 +882,19 @@ if (isset($_GET['get_student'])) {
     transition: background 0.15s;
   }
   .warn-btn:hover { background: #9c6617; }
+  .warn-btn:disabled { opacity: .55; cursor: not-allowed; }
+  .password-strength { margin-top: 8px; }
+  .password-strength-track { height: 7px; width: 100%; background: #eceae5; border-radius: 99px; overflow: hidden; }
+  .password-strength-fill { height: 100%; width: 0; border-radius: 99px; background: #c0392b; transition: width .2s ease, background-color .2s ease; }
+  .password-strength-meta { display:flex; justify-content:space-between; gap:8px; margin-top:6px; font-size:11px; color:var(--text-muted); }
+  #passwordStrengthLabel { font-weight:700; }
+  .password-requirements { margin-top:7px; font-size:11px; color:var(--text-secondary); line-height:1.8; }
+  .password-requirements span { display:inline-block; margin-right:8px; }
+  .password-requirements .met { color:var(--success); font-weight:700; }
+  .password-match-status { display:flex; align-items:center; gap:6px; min-height:18px; margin-top:7px; font-size:12px; font-weight:600; }
+  .password-match-status.match { color:#16834a; }
+  .password-match-status.no-match { color:#c0392b; }
+  .password-match-status.neutral { color:var(--text-muted); font-weight:400; }
 
   /* captured face thumb in step 4 */
   .face-thumb {
@@ -965,11 +1072,23 @@ if (isset($_GET['get_student'])) {
         <?= htmlspecialchars($_SESSION['cp_err']) ?><?php unset($_SESSION['cp_err']); ?>
       </div>
     <?php endif; ?>
-    <div class="field"><label>New Password</label>
-      <input type="password" name="new_password" placeholder="Min. 6 characters" required></div>
-    <div class="field"><label>Confirm Password</label>
-      <input type="password" name="confirm_password" placeholder="Repeat password" required></div>
-    <button type="submit" class="warn-btn">Change Password &amp; Continue</button>
+    <div class="field">
+      <label for="newPasswordInput">New Password</label>
+      <input type="password" id="newPasswordInput" name="new_password" placeholder="Create a password" minlength="6" required autocomplete="new-password">
+      <div class="password-strength" aria-live="polite">
+        <div class="password-strength-track"><div class="password-strength-fill" id="passwordStrengthFill"></div></div>
+        <div class="password-strength-meta"><span>Password strength</span><span id="passwordStrengthLabel">Enter a password</span></div>
+        <div class="password-requirements" id="passwordRequirements">
+          <span data-rule="length">6+ characters</span><span data-rule="lower">Lowercase</span><span data-rule="upper">Uppercase</span><span data-rule="number">Number</span><span data-rule="special">Special character</span>
+        </div>
+      </div>
+    </div>
+    <div class="field">
+      <label for="confirmPasswordInput">Confirm Password</label>
+      <input type="password" id="confirmPasswordInput" name="confirm_password" placeholder="Repeat your password" minlength="6" required autocomplete="new-password">
+      <div class="password-match-status neutral" id="passwordMatchStatus" aria-live="polite">Enter your password again to confirm it.</div>
+    </div>
+    <button type="submit" class="warn-btn" id="changePasswordBtn" disabled>Change Password &amp; Continue</button>
   </form>
 </div>
 <?php endif; ?>
@@ -1094,7 +1213,7 @@ if (isset($_GET['get_student'])) {
       <div class="section-body">
         <div class="field">
           <label>Face Capture</label>
-          <button type="button" class="icon-btn" id="faceCaptureBtn" onclick="openCamera('face')">
+          <button type="button" class="icon-btn" id="faceCaptureBtn" onclick="showFaceConsent()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
             Capture Student Face
           </button>
@@ -1120,6 +1239,19 @@ if (isset($_GET['get_student'])) {
   </form>
 </div>
 
+<!-- STUDENT FACE CAPTURE CONSENT -->
+<div class="modal-overlay modal-center" id="faceConsentOverlay" role="dialog" aria-modal="true" aria-labelledby="faceConsentTitle">
+  <div class="modal-sheet" style="border-radius:var(--radius)">
+    <div class="confirm-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
+    <h2 class="modal-title" id="faceConsentTitle" style="text-align:center">Student Face Capture Consent</h2>
+    <p class="confirm-text" style="text-align:left;margin-top:12px">Before continuing, the student must understand and agree to the capture of a facial photograph. The photo will be collected for documentation related to the MSDV Reporting System. Face positioning is used only to guide photo capture; the system does not recognize or identify the student. It will be stored with the report and made available only to personnel authorized to handle student discipline records. The camera will start only after consent is given. The student may decline consent, but a report cannot be submitted unless the student agrees to the required face capture. Please capture only with the student's informed permission and follow the school's privacy and data-retention policies.</p>
+    <div style="display:flex;gap:8px">
+      <button type="button" class="icon-btn" style="flex:1;justify-content:center" onclick="declineFaceConsent()">Decline</button>
+      <button type="button" class="submit-btn" style="flex:1" onclick="acceptFaceConsent()">I Agree &amp; Proceed</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── CAMERA MODAL ── -->
 <div class="modal-overlay" id="cameraOverlay">
   <div class="modal-sheet">
@@ -1141,44 +1273,12 @@ if (isset($_GET['get_student'])) {
         <video id="cameraStream" autoplay playsinline muted></video>
         <div class="face-corner tl" aria-hidden="true"></div><div class="face-corner tr" aria-hidden="true"></div>
         <div class="face-corner bl" aria-hidden="true"></div><div class="face-corner br" aria-hidden="true"></div>
-        <svg class="face-guide-overlay" id="faceGuideOverlay" viewBox="0 0 520 800" role="img" aria-label="Geometric face alignment guide" xmlns="http://www.w3.org/2000/svg" style="display:none">
-          <g fill="none" stroke="#f1f3f8" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" opacity="0.94">
-            <!-- outer head silhouette -->
-            <path d="M260 22 L205 32 L155 55 L112 90 L79 137 L55 194 L48 254 L48 346 L42 383 L51 459 L72 530 L100 600 L145 660 L205 710 L232 735 L288 735 L315 710 L375 660 L420 600 L448 530 L469 459 L478 383 L472 346 L472 254 L465 194 L441 137 L408 90 L365 55 L315 32 Z"/>
-            <!-- forehead planes -->
-            <path d="M260 22 L260 128 L260 220 L260 330 L260 430 L260 540 L260 735"/>
-            <path d="M205 32 L225 116 L242 205 L260 220 L278 205 L295 116 L315 32"/>
-            <path d="M112 90 L169 143 L205 205 L232 282 L260 330 L288 282 L315 205 L351 143 L408 90"/>
-            <path d="M79 137 L148 190 L196 252 L228 320 L260 330 L292 320 L324 252 L372 190 L441 137"/>
-            <path d="M55 194 L123 235 L180 278 L224 334 L260 346 L296 334 L340 278 L397 235 L465 194"/>
-            <!-- brows and eye sockets -->
-            <path d="M48 346 L105 319 L167 321 L224 344 L260 355 L296 344 L353 321 L415 319 L472 346"/>
-            <path d="M48 383 L101 361 L157 362 L212 383 L239 410 L212 430 L157 431 L101 410 Z"/>
-            <path d="M472 383 L419 361 L363 362 L308 383 L281 410 L308 430 L363 431 L419 410 Z"/>
-            <path d="M101 410 L157 431 L212 430 M419 410 L363 431 L308 430"/>
-            <!-- nose bridge and nose -->
-            <path d="M224 344 L235 399 L229 466 L217 514 L232 538 L260 548 L288 538 L303 514 L291 466 L285 399 L296 344"/>
-            <path d="M235 399 L248 466 L240 516 L232 538 M285 399 L272 466 L280 516 L288 538"/>
-            <path d="M217 514 L239 526 L250 541 L260 548 L270 541 L281 526 L303 514"/>
-            <!-- cheek planes -->
-            <path d="M48 383 L91 445 L133 493 L177 528 L217 514 M472 383 L429 445 L387 493 L343 528 L303 514"/>
-            <path d="M91 445 L157 464 L212 478 L229 466 M429 445 L363 464 L308 478 L291 466"/>
-            <path d="M72 530 L145 554 L204 574 L260 584 L316 574 L375 554 L448 530"/>
-            <!-- mouth -->
-            <path d="M188 610 L222 594 L260 605 L298 594 L332 610 L305 632 L280 640 L240 640 L215 632 Z"/>
-            <path d="M188 610 L260 620 L332 610 M215 632 L260 628 L305 632"/>
-            <path d="M204 574 L222 594 L215 632 L240 660 L260 666 L280 660 L305 632 L298 594 L316 574"/>
-            <!-- jaw and chin facets -->
-            <path d="M100 600 L145 660 L205 710 L232 735 M420 600 L375 660 L315 710 L288 735"/>
-            <path d="M145 660 L204 650 L240 660 L260 666 L280 660 L316 650 L375 660"/>
-            <path d="M205 710 L240 660 L260 666 L280 660 L315 710"/>
-          </g>
-        </svg>
+        <div class="face-guide-overlay" id="faceGuideOverlay" aria-hidden="true"><div class="face-oval" id="faceOval"></div></div>
+        <div class="face-detection-status" id="faceDetectionStatus" aria-live="polite">Initializing face detection…</div>
       </div>
       <div class="face-capture-bottom" id="faceCaptureBottom" style="display:none">
-        <div class="face-capture-actions">
-          <button type="button" class="face-shutter" onclick="capturePhoto()" aria-label="Take photo"></button>
-        </div>
+        <div class="face-capture-actions"><button type="button" class="face-shutter" onclick="capturePhoto()" aria-label="Take photo"></button></div>
+        <div class="face-hint" id="faceCaptureHint">Keep your face inside the oval. The photo will be taken automatically when your face is aligned and steady.</div>
       </div>
       <div class="modal-row" id="standardCameraActions">
         <button type="button" class="icon-btn" onclick="stopCamera()">Cancel</button>
@@ -1216,6 +1316,8 @@ if (isset($_GET['get_student'])) {
   </div>
 </div>
 
+<!-- Face positioning only: detects whether one face fits inside the oval; does not identify the person. -->
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script>
 /* ── STUDENT ID FORMAT ── */
 document.getElementById('studentIDInput').addEventListener('input', function(){
@@ -1284,84 +1386,156 @@ function clearCamEvidence() {
     document.getElementById('evidenceCamPreview').style.display = 'none';
 }
 
-/* ── CAMERA ── */
+/* ── CAMERA + AUTOMATIC FACE ALIGNMENT ── */
 let stream = null, cameraMode = '', evidenceCamData = null;
+let faceDetectionTimer = null, faceStableSince = 0, previousFaceCenter = null;
+let faceCaptureInProgress = false, faceDetectorReady = false;
+const FACE_MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@master/weights';
 
-function openCamera(mode) {
-    cameraMode = mode;
-    document.getElementById('cameraModalTitle').textContent =
-        mode === 'face' ? 'Capture Student Face' : 'Take Photo Evidence';
-    document.getElementById('cameraModalSub').textContent =
-        mode === 'face' ? 'Make sure your face is clearly visible and aligned within the guide.' : 'Capture the evidence clearly.';
-    document.getElementById('cameraLive').style.display = 'flex';
-    document.getElementById('cameraReview').style.display = 'none';
-    const overlay = document.getElementById('cameraOverlay');
-    overlay.classList.toggle('face-capture-mode', mode === 'face');
-    overlay.classList.toggle('evidence-capture-mode', mode === 'evidence');
-    document.getElementById('faceGuideOverlay').style.display = mode === 'face' ? 'block' : 'none';
-    document.getElementById('faceCaptureTopbar').style.display = 'flex';
-    document.getElementById('faceCaptureHeading').style.display = 'block';
-    document.getElementById('faceCaptureBottom').style.display = 'block';
-    document.getElementById('standardCameraActions').style.display = 'none';
-
-    // Use the back camera for both face capture and evidence.
-    const constraints = {
-        video: {
-            facingMode: { ideal: 'environment' },
-            width: { ideal: 1280 },
-            height: { ideal: 960 }
+function showFaceConsent(){document.getElementById('faceConsentOverlay').classList.add('active');}
+function declineFaceConsent(){document.getElementById('faceConsentOverlay').classList.remove('active');}
+async function acceptFaceConsent(){
+  document.getElementById('faceConsentOverlay').classList.remove('active');
+  if(await loadFaceDetector()) openCamera('face');
+}
+async function loadFaceDetector(){
+  if(faceDetectorReady)return true;
+  if(!window.faceapi){alert('The face-positioning component could not load. Connect to the internet and refresh the page.');return false;}
+  try{await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_MODEL_URL);faceDetectorReady=true;return true;}
+  catch(e){console.error(e);alert('The face-positioning model could not load. Connect to the internet and try again.');return false;}
+}
+function resetFaceDetection(){
+  if(faceDetectionTimer)cancelAnimationFrame(faceDetectionTimer);
+  faceDetectionTimer=null;faceStableSince=0;previousFaceCenter=null;faceCaptureInProgress=false;
+  const oval=document.getElementById('faceOval'),status=document.getElementById('faceDetectionStatus');
+  if(oval)oval.className='face-oval';
+  if(status){status.className='face-detection-status';status.textContent='Looking for a face…';}
+}
+function updateFaceStatus(state,message){
+  const oval=document.getElementById('faceOval'),status=document.getElementById('faceDetectionStatus');
+  if(!oval||!status)return;
+  oval.className='face-oval'+(state==='good'?' good':state==='bad'?' out':'');
+  status.className='face-detection-status'+(state==='good'?' good':state==='bad'?' bad':'');
+  status.textContent=message;
+}
+function faceFitsGuide(box,video){
+  const cx=(box.x+box.width/2)/video.videoWidth,cy=(box.y+box.height/2)/video.videoHeight;
+  const w=box.width/video.videoWidth,h=box.height/video.videoHeight;
+  const nx=(cx-.5)/.27,ny=(cy-.48)/.36;
+  return nx*nx+ny*ny<=.48 && w<=.58 && h<=.76 && cx>.20 && cx<.80 && cy>.12 && cy<.88;
+}
+async function detectFaceContinuously(){
+  if(cameraMode!=='face'||!stream||faceCaptureInProgress)return;
+  const video=document.getElementById('cameraStream');
+  if(!video||video.readyState<2||!faceDetectorReady){faceDetectionTimer=requestAnimationFrame(detectFaceContinuously);return;}
+  try{
+    const detections=await faceapi.detectAllFaces(video,new faceapi.TinyFaceDetectorOptions({inputSize:320,scoreThreshold:.55}));
+    if(detections.length!==1){
+      faceStableSince=0;previousFaceCenter=null;
+      updateFaceStatus('bad',detections.length>1?'Only one face should be visible':'Move your face into the oval');
+    }else{
+      const box=detections[0].box;
+      if(!faceFitsGuide(box,video)){
+        faceStableSince=0;previousFaceCenter=null;
+        updateFaceStatus('bad','Face does not fit. Move into the center of the oval');
+      }else{
+        const center={x:box.x+box.width/2,y:box.y+box.height/2};
+        const movement=previousFaceCenter?Math.hypot(center.x-previousFaceCenter.x,center.y-previousFaceCenter.y)/Math.hypot(video.videoWidth,video.videoHeight):1;
+        previousFaceCenter=center;
+        if(movement>.018){faceStableSince=performance.now();updateFaceStatus('good','Good position — hold still…');}
+        else{
+          if(!faceStableSince)faceStableSince=performance.now();
+          const remaining=Math.max(0,1200-(performance.now()-faceStableSince));
+          updateFaceStatus('good',remaining>0?`Perfect — hold still for ${(remaining/1000).toFixed(1)}s`:'Capturing photo…');
+          if(remaining<=0){faceCaptureInProgress=true;capturePhoto();return;}
         }
-    };
-    navigator.mediaDevices.getUserMedia(constraints)
-        .then(s => {
-            stream = s;
-            document.getElementById('cameraStream').srcObject = s;
-            document.getElementById('cameraOverlay').classList.add('active');
-        })
-        .catch(() => alert('Camera not accessible. Please allow camera permission.'));
-}
-
-function capturePhoto() {
-    const video = document.getElementById('cameraStream');
-    const canvas = document.getElementById('cameraCanvas');
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    canvas.getContext('2d').drawImage(video, 0, 0);
-    document.getElementById('capturedImgEl').src = canvas.toDataURL('image/png');
-    document.getElementById('cameraLive').style.display = 'none';
-    document.getElementById('cameraReview').style.display = 'flex';
-}
-
-function retakePhoto() {
-    document.getElementById('cameraLive').style.display = 'flex';
-    document.getElementById('cameraReview').style.display = 'none';
-}
-
-function confirmPhoto() {
-    const data = document.getElementById('cameraCanvas').toDataURL('image/png');
-    if (cameraMode === 'face') {
-        document.getElementById('faceCaptureData').value = data;
-        document.getElementById('faceCapturePreview').innerHTML =
-            `<img src="${data}" class="face-thumb" alt="Face capture">`;
-        document.getElementById('faceCaptureBtn').classList.add('active');
-    } else {
-        evidenceCamData = data;
-        document.getElementById('evidenceCaptureData').value = data;
-        // Keep the evidence source unambiguous: using the camera clears any chosen file.
-        document.getElementById('evidenceFile').value = '';
-        document.getElementById('fileNameLabel').textContent = 'Choose an image…';
-        document.getElementById('evidencePreview').style.display = 'none';
-        document.getElementById('evidenceCamImg').src = data;
-        document.getElementById('evidenceCamPreview').style.display = 'block';
+      }
     }
-    stopCamera();
+  }catch(e){console.warn(e);updateFaceStatus('bad','Unable to detect face. Adjust lighting and try again');}
+  faceDetectionTimer=requestAnimationFrame(detectFaceContinuously);
 }
+async function openCamera(mode){
+  cameraMode=mode;
+  document.getElementById('cameraModalTitle').textContent=mode==='face'?'Capture Student Face':'Take Photo Evidence';
+  document.getElementById('cameraModalSub').textContent=mode==='face'?'Use the back camera. Position the student face inside the oval and hold still for automatic capture.':'Capture the evidence clearly.';
+  document.getElementById('cameraLive').style.display='flex';
+  document.getElementById('cameraReview').style.display='none';
+  const overlay=document.getElementById('cameraOverlay');
+  overlay.classList.toggle('face-capture-mode',mode==='face');
+  overlay.classList.toggle('evidence-capture-mode',mode==='evidence');
+  document.getElementById('faceGuideOverlay').style.display=mode==='face'?'block':'none';
+  document.getElementById('faceDetectionStatus').style.display=mode==='face'?'block':'none';
+  document.getElementById('faceCaptureTopbar').style.display='flex';
+  document.getElementById('faceCaptureHeading').style.display='block';
+  document.getElementById('faceCaptureBottom').style.display=mode==='face'?'block':'none';
+  document.getElementById('standardCameraActions').style.display=mode==='evidence'?'flex':'none';
 
-function stopCamera() {
-    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-    const overlay = document.getElementById('cameraOverlay');
-    overlay.classList.remove('active', 'face-capture-mode', 'evidence-capture-mode');
-    document.getElementById('faceGuideOverlay').style.display = 'none';
+  // Keep the two camera modes separate: evidence uses a manual shutter,
+  // while face capture uses automatic detection and never shows a manual shutter.
+  document.getElementById('faceCaptureBottom').style.display=mode==='face'?'block':'none';
+  document.getElementById('standardCameraActions').style.display=mode==='evidence'?'flex':'none';
+
+  resetFaceDetection();
+
+  // Show the modal before requesting permission so the user sees the camera
+  // interface even while the browser is waiting for camera access.
+  overlay.classList.add('active');
+
+  try{
+    const s=await navigator.mediaDevices.getUserMedia({
+      video:{
+        facingMode: mode==='face' ? {ideal:'environment'} : {ideal:'environment'},
+        width:{ideal:1280},
+        height:{ideal:960}
+      }
+    });
+    stream=s;
+    const video=document.getElementById('cameraStream');
+    video.srcObject=s;
+    await video.play();
+    if(mode==='face'){updateFaceStatus('neutral','Looking for a face…');faceDetectionTimer=requestAnimationFrame(detectFaceContinuously);}
+  }catch(e){console.error(e);alert('Camera not accessible. Allow camera permission and use a secure HTTPS connection.');stopCamera();}
+}
+function capturePhoto(){
+  if(cameraMode==='face'&&!faceCaptureInProgress)return;
+  const video=document.getElementById('cameraStream'),canvas=document.getElementById('cameraCanvas');
+  if(!video.videoWidth||!video.videoHeight)return;
+  canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+  const ctx=canvas.getContext('2d');
+  ctx.drawImage(video,0,0);
+  document.getElementById('capturedImgEl').src=canvas.toDataURL('image/png');
+  document.getElementById('cameraLive').style.display='none';
+  document.getElementById('cameraReview').style.display='flex';
+  if(faceDetectionTimer)cancelAnimationFrame(faceDetectionTimer);faceDetectionTimer=null;
+}
+function retakePhoto(){
+  document.getElementById('cameraLive').style.display='flex';
+  document.getElementById('cameraReview').style.display='none';
+  if(cameraMode==='face'){resetFaceDetection();faceDetectionTimer=requestAnimationFrame(detectFaceContinuously);}
+}
+function confirmPhoto(){
+  const data=document.getElementById('cameraCanvas').toDataURL('image/png');
+  if(cameraMode==='face'){
+    document.getElementById('faceCaptureData').value=data;
+    document.getElementById('faceCapturePreview').innerHTML=`<img src="${data}" class="face-thumb" alt="Captured student face">`;
+    document.getElementById('faceCaptureBtn').classList.add('active');
+  }else{
+    evidenceCamData=data;document.getElementById('evidenceCaptureData').value=data;
+    document.getElementById('evidenceFile').value='';
+    document.getElementById('fileNameLabel').textContent='Choose an image…';
+    document.getElementById('evidencePreview').style.display='none';
+    document.getElementById('evidenceCamImg').src=data;
+    document.getElementById('evidenceCamPreview').style.display='block';
+  }
+  stopCamera();
+}
+function stopCamera(){
+  if(faceDetectionTimer)cancelAnimationFrame(faceDetectionTimer);faceDetectionTimer=null;
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+  document.getElementById('cameraOverlay').classList.remove('active','face-capture-mode','evidence-capture-mode');
+  document.getElementById('faceGuideOverlay').style.display='none';
+  document.getElementById('faceDetectionStatus').style.display='none';
+  resetFaceDetection();
 }
 
 /* ── SIGNATURE ── */
@@ -1401,6 +1575,11 @@ function clearSignature() {
 
 /* ── SUBMIT ── */
 function confirmSubmit() {
+    if (!document.getElementById('faceCaptureData').value) {
+        alert('Student face capture is required. Please use Capture Student Face before submitting.');
+        document.getElementById('faceCaptureBtn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
     document.getElementById('signatureData').value = sigCanvas.toDataURL('image/png');
     document.getElementById('confirmOverlay').classList.add('active');
 }
@@ -1409,6 +1588,12 @@ function closeConfirm() {
 }
 async function doSubmit() {
     const form = document.getElementById('reportForm');
+    if (!document.getElementById('faceCaptureData').value) {
+        closeConfirm();
+        alert('Student face capture is required. Please capture and confirm the student face first.');
+        document.getElementById('faceCaptureBtn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
     const fileInput = document.getElementById('evidenceFile');
     const selectedFile = fileInput && fileInput.files ? fileInput.files[0] : null;
 
@@ -1481,6 +1666,71 @@ document.getElementById('cameraOverlay').addEventListener('click', function(e){
 document.getElementById('confirmOverlay').addEventListener('click', function(e){
     if (e.target === this) closeConfirm();
 });
+</script>
+<script>
+/* ── FIRST-LOGIN PASSWORD STRENGTH AND MATCH INDICATORS ── */
+(function initFirstLoginPasswordIndicators() {
+  const password = document.getElementById('newPasswordInput');
+  const confirm = document.getElementById('confirmPasswordInput');
+  const fill = document.getElementById('passwordStrengthFill');
+  const strengthLabel = document.getElementById('passwordStrengthLabel');
+  const matchStatus = document.getElementById('passwordMatchStatus');
+  const requirements = document.getElementById('passwordRequirements');
+  const submitButton = document.getElementById('changePasswordBtn');
+  if (!password || !confirm || !fill || !strengthLabel || !matchStatus || !requirements || !submitButton) return;
+
+  function getStrength(value) {
+    const checks = {
+      length: value.length >= 6,
+      lower: /[a-z]/.test(value),
+      upper: /[A-Z]/.test(value),
+      number: /[0-9]/.test(value),
+      special: /[^A-Za-z0-9]/.test(value)
+    };
+    let score = Object.values(checks).filter(Boolean).length;
+    let label = 'Very Weak';
+    let color = '#c0392b';
+    if (!value) label = 'Enter a password';
+    else if (score === 2) { label = 'Weak'; color = '#d97706'; }
+    else if (score === 3) { label = 'Medium'; color = '#2563eb'; }
+    else if (score === 4) { label = 'Strong'; color = '#16834a'; }
+    else if (score === 5) { label = 'Very Strong'; color = '#075e35'; }
+    return { checks, score, label, color };
+  }
+
+  function updateIndicators() {
+    const result = getStrength(password.value);
+    fill.style.width = (result.score / 5 * 100) + '%';
+    fill.style.backgroundColor = result.color;
+    strengthLabel.textContent = result.label;
+    strengthLabel.style.color = result.color;
+
+    requirements.querySelectorAll('[data-rule]').forEach(item => {
+      item.classList.toggle('met', !!result.checks[item.dataset.rule]);
+    });
+
+    const hasConfirmation = confirm.value.length > 0;
+    const matches = hasConfirmation && password.value === confirm.value;
+    matchStatus.classList.remove('match', 'no-match', 'neutral');
+    if (!hasConfirmation) {
+      matchStatus.textContent = 'Enter your password again to confirm it.';
+      matchStatus.classList.add('neutral');
+    } else if (matches) {
+      matchStatus.textContent = '✓ Passwords match';
+      matchStatus.classList.add('match');
+    } else {
+      matchStatus.textContent = '✕ Passwords do not match';
+      matchStatus.classList.add('no-match');
+    }
+
+    // Keep the existing six-character minimum and prevent submission until both fields match.
+    submitButton.disabled = password.value.length < 6 || !matches;
+  }
+
+  password.addEventListener('input', updateIndicators);
+  confirm.addEventListener('input', updateIndicators);
+  updateIndicators();
+})();
 </script>
 <script>
 /* ── SIDEBAR ── */
