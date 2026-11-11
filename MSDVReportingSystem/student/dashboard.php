@@ -16,12 +16,9 @@ if (isset($_POST['action']) && $_POST['action'] === 'first_change_pass') {
         $_SESSION['cp_err'] = 'Passwords do not match.';
     } elseif (strlen($new) < 6) {
         $_SESSION['cp_err'] = 'Minimum 6 characters required.';
-    } else {
+      } else {
         $pdo->prepare("UPDATE users SET password=?, is_first_login=0 WHERE id=?")
             ->execute([password_hash($new, PASSWORD_DEFAULT), $_SESSION['user_id']]);
-        $pdo->prepare("UPDATE users SET remember_token=NULL, remember_token_expires=NULL WHERE id=?")
-            ->execute([$_SESSION['user_id']]);
-        setcookie('remember_token', '', time() - 3600, '/');
         session_destroy();
         header('Location: ../login.php?changed=1'); exit;
     }
@@ -576,6 +573,24 @@ $majorCount = count(array_filter($violations, fn($v) => $v['category'] === 'majo
     transition: background 0.15s;
   }
   .warn-btn:hover { background: #9c6617; }
+  .warn-btn:disabled { opacity: .55; cursor: not-allowed; background: #9c6617; }
+
+  /* First-login password feedback */
+  .password-strength { margin: -4px 0 14px; }
+  .strength-top { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:12px; margin-bottom:7px; }
+  .strength-label { font-weight:600; color:var(--text-secondary); }
+  .strength-track { height:7px; width:100%; background:#eeeae4; border-radius:99px; overflow:hidden; }
+  .strength-fill { height:100%; width:0; border-radius:inherit; background:#b91c1c; transition:width .2s ease, background .2s ease; }
+  .strength-requirements { display:grid; grid-template-columns:1fr 1fr; gap:5px 10px; margin-top:9px; }
+  .strength-requirements span { font-size:11px; color:var(--text-muted); display:flex; align-items:center; gap:5px; }
+  .strength-requirements span::before { content:'○'; font-size:12px; }
+  .strength-requirements span.met { color:var(--success); }
+  .strength-requirements span.met::before { content:'✓'; font-weight:700; }
+  .password-match { display:none; font-size:12px; margin-top:7px; font-weight:500; }
+  .password-match.visible { display:block; }
+  .password-match.match { color:var(--success); }
+  .password-match.no-match { color:var(--danger); }
+
 
   /* ── BURGER BUTTON ── */
   .topbar-left { display: flex; align-items: center; gap: 10px; }
@@ -902,6 +917,107 @@ $majorCount = count(array_filter($violations, fn($v) => $v['category'] === 'majo
     </div>
   </form>
 </div>
+
+<script>
+/* ── FIRST-LOGIN PASSWORD STRENGTH + MATCH ── */
+(function () {
+  const password = document.getElementById('newPassword');
+  const confirm = document.getElementById('confirmPassword');
+  const strengthLabel = document.getElementById('strengthLabel');
+  const strengthFill = document.getElementById('strengthFill');
+  const matchMessage = document.getElementById('passwordMatch');
+  const submitButton = document.getElementById('changePasswordBtn');
+
+  // This script is only present when the first-login modal is rendered.
+  if (!password || !confirm || !strengthLabel || !strengthFill || !matchMessage || !submitButton) return;
+
+  const requirements = {
+    length: document.getElementById('reqLength'),
+    upper: document.getElementById('reqUpper'),
+    lower: document.getElementById('reqLower'),
+    number: document.getElementById('reqNumber'),
+    special: document.getElementById('reqSpecial')
+  };
+
+  function updatePasswordFeedback() {
+    const value = password.value;
+    const checks = {
+      length: value.length >= 6,
+      upper: /[A-Z]/.test(value),
+      lower: /[a-z]/.test(value),
+      number: /[0-9]/.test(value),
+      special: /[^A-Za-z0-9]/.test(value)
+    };
+
+    Object.keys(checks).forEach(function (key) {
+      requirements[key].classList.toggle('met', checks[key]);
+    });
+
+    const score = Object.values(checks).filter(Boolean).length;
+    let label = 'Very Weak';
+    let color = '#b91c1c';
+    let width = 20;
+
+    if (!value.length) {
+      label = 'Not entered';
+      width = 0;
+      color = '#b91c1c';
+    } else if (score <= 1) {
+      label = 'Very Weak';
+      width = 20;
+      color = '#b91c1c';
+    } else if (score === 2) {
+      label = 'Weak';
+      width = 40;
+      color = '#ea580c';
+    } else if (score === 3) {
+      label = 'Medium';
+      width = 60;
+      color = '#ca8a04';
+    } else if (score === 4) {
+      label = 'Strong';
+      width = 80;
+      color = '#2d6a4f';
+    } else {
+      label = 'Very Strong';
+      width = 100;
+      color = '#166534';
+    }
+
+    strengthLabel.textContent = label;
+    strengthLabel.style.color = color;
+    strengthFill.style.width = width + '%';
+    strengthFill.style.background = color;
+
+    updatePasswordMatch();
+  }
+
+  function updatePasswordMatch() {
+    const first = password.value;
+    const second = confirm.value;
+    const hasConfirmation = second.length > 0;
+    const matches = hasConfirmation && first === second;
+    const validLength = first.length >= 6;
+
+    matchMessage.className = 'password-match';
+    if (!hasConfirmation) {
+      matchMessage.textContent = '';
+    } else if (matches) {
+      matchMessage.textContent = '✓ Passwords match';
+      matchMessage.classList.add('visible', 'match');
+    } else {
+      matchMessage.textContent = '✕ Passwords do not match';
+      matchMessage.classList.add('visible', 'no-match');
+    }
+
+    submitButton.disabled = !(validLength && matches);
+  }
+
+  password.addEventListener('input', updatePasswordFeedback);
+  confirm.addEventListener('input', updatePasswordMatch);
+  updatePasswordFeedback();
+})();
+</script>
 
 <script>
 function openAppeal(v) {
