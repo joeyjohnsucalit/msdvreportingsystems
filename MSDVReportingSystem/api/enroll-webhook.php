@@ -12,7 +12,7 @@ function out($code, $ok, $msg) {
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') out(405, false, 'POST only');
 
 // Shared secret (set FORM_SECRET as an environment variable on Render)
-   $secret = getenv('FORM_SECRET') ?: 'MSDV-9fK2xQ7vLp4Zt8RbN3W';
+$secret = getenv('FORM_SECRET');
 $in     = json_decode(file_get_contents('php://input'), true) ?: [];
 if (!$secret || !hash_equals($secret, (string)($in['secret'] ?? ''))) out(403, false, 'Forbidden');
 
