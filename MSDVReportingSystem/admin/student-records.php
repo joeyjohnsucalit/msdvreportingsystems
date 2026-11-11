@@ -16,23 +16,9 @@ $notifStmt = $pdo->prepare("SELECT * FROM notifications WHERE user_id=? ORDER BY
 $notifStmt->execute([$_SESSION['user_id']]);
 $notifList = $notifStmt->fetchAll();
 
-if(isset($_POST['action'])&&$_POST['action']==='add'){
-    $sid=trim($_POST['student_id']);$fname=trim($_POST['full_name']);$course=(int)$_POST['course_id'];$year=(int)$_POST['year_level'];$dept=(int)$_POST['department_id'];
-    $dup=$pdo->prepare("SELECT student_id FROM students WHERE student_id=?");$dup->execute([$sid]);
-if($dup->fetch()){$_SESSION['err']='Student ID <strong>'.htmlspecialchars($sid).'</strong> is already taken.';header('Location: student-records.php');exit;}
-$dupUser=$pdo->prepare("SELECT id FROM users WHERE username=?");$dupUser->execute([$sid]);
-if($dupUser->fetch()){$_SESSION['err']='A user account with ID <strong>'.htmlspecialchars($sid).'</strong> already exists.';header('Location: student-records.php');exit;}
-    $uname=$sid;$lastFive=substr(str_replace('-','',$sid),-5);$hashed=password_hash($lastFive,PASSWORD_DEFAULT);
-    try{
-        $pdo->beginTransaction();
-        $pdo->prepare("INSERT INTO users (full_name,username,email,password,role,is_first_login) VALUES (?,?,'',?,'student',1)")->execute([$fname,$uname,$hashed]);
-        $uid=$pdo->lastInsertId();
-        $pdo->prepare("INSERT INTO students (student_id,full_name,course_id,year_level,department_id,user_id) VALUES (?,?,?,?,?,?)")->execute([$sid,$fname,$course,$year,$dept,$uid]);
-        $pdo->commit();
-        $_SESSION['msg']='Student added. <strong>Username:</strong> '.$sid.' | <strong>Default Password:</strong> '.$lastFive;
-    }catch(Exception $e){$pdo->rollBack();$_SESSION['err']='Error: '.$e->getMessage();}
-    header('Location: student-records.php');exit;
-}
+// NOTE: "add" action removed — students are now enrolled through the Google Form
+// via api/enroll-webhook.php
+
 if(isset($_POST['action'])&&$_POST['action']==='edit'){
     $sid=trim($_POST['student_id']);$fname=trim($_POST['full_name']);$course=(int)$_POST['course_id'];$year=(int)$_POST['year_level'];$dept=(int)$_POST['department_id'];
     $pdo->prepare("UPDATE students SET full_name=?,course_id=?,year_level=?,department_id=? WHERE student_id=?")->execute([$fname,$course,$year,$dept,$sid]);
@@ -89,6 +75,7 @@ $stmt=$pdo->prepare("SELECT s.*,c.name as course_name,d.name as dept_name,(SELEC
 $stmt->execute($params);$students=$stmt->fetchAll();
 function getRiskLevel($t){if($t>=5)return['label'=>'Critical','class'=>'danger','color'=>'#dc2626','bg'=>'#fff0f0'];if($t>=4)return['label'=>'High','class'=>'warning','color'=>'#d97706','bg'=>'#fffbeb'];if($t>=2)return['label'=>'Moderate','class'=>'info','color'=>'#2563eb','bg'=>'#eff4ff'];return['label'=>'Low','class'=>'success','color'=>'#16a34a','bg'=>'#f0fdf4'];}
 ?>
+<?php require_once 'theme-head.php'; ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -176,16 +163,6 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 /* ── CONTENT ── */
 .content { margin-top:60px; padding:28px 32px 40px; flex:1; }
 
-/* Page top */
-.page-top { display:flex; align-items:center; justify-content:flex-end; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
-.page-top h2 { font-size:22px; font-weight:600; color:var(--text); letter-spacing:-0.4px; margin:0 0 3px; }
-.page-top p  { font-size:13px; color:var(--text-3); margin:0; }
-
-/* Add button */
-.btn-add { display:flex; align-items:center; gap:7px; background:var(--accent); color:#fff; border:none; padding:9px 18px; border-radius:var(--r-sm); font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:background 0.15s, transform 0.1s; white-space:nowrap; left: 10px; }
-.btn-add:hover { background:#1d4ed8; color:#fff; }
-.btn-add:active { transform:scale(0.98); }
-
 /* Alert banners */
 .alert-banner { border-radius:var(--r-md); padding:12px 16px; font-size:13px; font-weight:500; margin-bottom:16px; display:flex; align-items:center; gap:10px; border:none; }
 .alert-banner.success { background:#f0fdf4; color:#15803d; }
@@ -238,7 +215,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .view-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:var(--r-sm); font-size:12px; font-weight:500; border:1px solid var(--border); background:#fff; color:var(--text-2); cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; transition:all 0.15s; }
 .view-btn:hover { background:var(--accent-light); color:var(--accent); border-color:#c7d7f8; }
 
-/* ── MODALS — redesigned ── */
+/* ── MODALS ── */
 .modal-content { border:1px solid var(--border); border-radius:var(--r-lg); box-shadow:0 16px 48px rgba(0,0,0,0.12); font-family:'Plus Jakarta Sans',sans-serif; overflow:hidden; }
 .modal-header { padding:20px 24px 16px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; justify-content:space-between; }
 .modal-header .modal-title { font-size:16px; font-weight:600; color:var(--text); letter-spacing:-0.2px; }
@@ -329,6 +306,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
       <li><a href="data-backup.php"><i class="fas fa-cloud-download-alt"></i><span>Data Backup</span></a></li>
       <h3>System</h3>
       <li><a href="user-management.php"><i class="fas fa-user-cog"></i><span>User Management</span></a></li>
+      
       <li><a href="../logout.php"><i class="fas fa-sign-out-alt"></i><span>Log Out</span></a></li>
     </ul>
   </div>
@@ -386,14 +364,6 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
     <?php if(isset($_SESSION['err'])): ?>
     <div class="alert-banner error"><i class="fas fa-exclamation-circle"></i><?= $_SESSION['err'] ?><?php unset($_SESSION['err']); ?></div>
     <?php endif; ?>
-
-    <!-- Page top -->
-    <div class="page-top">
-      
-      <button class="btn-add" data-bs-toggle="modal" data-bs-target="#addStudentModal">
-        <i class="fas fa-plus" style="font-size:11px;"></i> Add Student
-      </button>
-    </div>
 
     <!-- Filter bar -->
     <form method="GET" class="filter-bar">
@@ -454,53 +424,6 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 
   </div><!-- /content -->
 </div><!-- /main-content -->
-
-<!-- ── ADD STUDENT MODAL ── -->
-<div class="modal fade" id="addStudentModal" tabindex="-1">
-  <div class="modal-dialog modal-dialog-centered">
-    <form method="POST" class="modal-content">
-      <input type="hidden" name="action" value="add">
-      <div class="modal-header">
-        <span class="modal-title">Add New Student</span>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <div class="f-group">
-          <label class="f-label">Student ID</label>
-          <input type="text" name="student_id" id="addSID" class="f-input" maxlength="9" placeholder="000-00000" required>
-          <div class="f-hint">Format: 000-00000 — last 5 digits become default password</div>
-        </div>
-        <div class="f-group">
-          <label class="f-label">Full Name</label>
-          <input type="text" name="full_name" class="f-input" placeholder="Last, First Middle" required>
-        </div>
-        <div class="f-group">
-          <label class="f-label">Department</label>
-          <select name="department_id" id="addDept" class="f-select" required onchange="filterCoursesByDept(this.value,'addCourse')">
-            <option value="">Select department…</option>
-            <?php foreach($departments as $d): ?><option value="<?=$d['id']?>"><?= htmlspecialchars($d['name']) ?></option><?php endforeach; ?>
-          </select>
-        </div>
-        <div class="f-group">
-          <label class="f-label">Course</label>
-          <select name="course_id" id="addCourse" class="f-select" required>
-            <option value="">Select department first</option>
-          </select>
-        </div>
-        <div class="f-group">
-          <label class="f-label">Year Level</label>
-          <select name="year_level" class="f-select" required>
-            <?php for($i=1;$i<=4;$i++): ?><option value="<?=$i?>">Year <?=$i?></option><?php endfor; ?>
-          </select>
-        </div>
-      </div>
-      <div class="modal-footer">
-        <button type="button" class="m-btn ghost" data-bs-dismiss="modal">Cancel</button>
-        <button type="submit" class="m-btn primary"><i class="fas fa-plus" style="font-size:11px;"></i> Save Student</button>
-      </div>
-    </form>
-  </div>
-</div>
 
 <!-- ── VIEW STUDENT MODAL ── -->
 <div class="modal fade" id="viewStudentModal" tabindex="-1">
@@ -592,13 +515,6 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 const allCourses = <?= json_encode($courses) ?>;
-
-// Student ID auto-format
-document.getElementById('addSID').addEventListener('input', function(){
-    let v = this.value.replace(/[^0-9]/g,'');
-    if(v.length > 3) v = v.substring(0,3) + '-' + v.substring(3,8);
-    this.value = v;
-});
 
 function filterCoursesByDept(deptId, selectId){
     const sel = document.getElementById(selectId);
