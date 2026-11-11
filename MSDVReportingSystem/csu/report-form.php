@@ -10,6 +10,18 @@ if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], $allowedRoles))
 $role = $_SESSION['role'];
 $msg = $err = '';
 
+// Password strength score: 0-1 Very Weak, 2 Weak, 3 Medium, 4-5 Strong, 6 Very Strong.
+function getPasswordStrengthScore(string $password): int {
+    $score = 0;
+    if (strlen($password) >= 8) $score++;
+    if (strlen($password) >= 12) $score++;
+    if (preg_match('/[a-z]/', $password)) $score++;
+    if (preg_match('/[A-Z]/', $password)) $score++;
+    if (preg_match('/[0-9]/', $password)) $score++;
+    if (preg_match('/[^A-Za-z0-9]/', $password)) $score++;
+    return $score;
+}
+
 // FIRST LOGIN PASSWORD CHANGE
 if (isset($_POST['action']) && $_POST['action'] === 'first_change_pass') {
     $new  = trim($_POST['new_password']  ?? '');
@@ -19,8 +31,8 @@ if (isset($_POST['action']) && $_POST['action'] === 'first_change_pass') {
         $_SESSION['cp_err'] = 'Both fields are required.';
     } elseif ($new !== $conf) {
         $_SESSION['cp_err'] = 'Passwords do not match.';
-    } elseif (strlen($new) < 6) {
-        $_SESSION['cp_err'] = 'Minimum 6 characters required.';
+    } elseif (getPasswordStrengthScore($new) < 4) {
+        $_SESSION['cp_err'] = 'Please use a strong password. Include at least 8 characters with uppercase and lowercase letters, a number, and a special character.';
     } else {
         $pdo->prepare("UPDATE users SET password=?, is_first_login=0 WHERE id=?")
             ->execute([password_hash($new, PASSWORD_DEFAULT), $_SESSION['user_id']]);
@@ -44,9 +56,11 @@ if ($role === 'student') {
 // SUBMIT REPORT
 if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
     $sid         = trim($_POST['student_id'] ?? '');
-    $category    = $_POST['category'] ?? '';
-    $violation   = trim($_POST['violation'] ?? '');
-    $description = trim($_POST['description'] ?? '');
+    $category        = $_POST['category'] ?? '';
+    $violationChoice = trim($_POST['violation'] ?? '');
+    $otherViolation  = trim($_POST['other_violation'] ?? '');
+    $violation       = ($violationChoice === 'Others') ? $otherViolation : $violationChoice;
+    $description     = trim($_POST['description'] ?? '');
 
     $sCheck = $pdo->prepare("SELECT * FROM students WHERE student_id=?");
     $sCheck->execute([$sid]);
@@ -58,8 +72,12 @@ if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
         $err = 'You cannot report yourself.';
     } elseif (!in_array($category, ['minor', 'major'], true)) {
         $err = 'Invalid violation category.';
-    } elseif ($violation === '') {
+    } elseif ($violationChoice === '') {
         $err = 'Please select a violation.';
+    } elseif ($violationChoice === 'Others' && $otherViolation === '') {
+        $err = 'Please enter the custom violation.';
+    } elseif ($violation === '') {
+        $err = 'Please select or enter a violation.';
     } elseif (empty($_POST['face_capture_data'])) {
         $err = 'Student face capture is required before submitting this report.';
     } else {
@@ -882,6 +900,16 @@ if (isset($_GET['get_student'])) {
     transition: background 0.15s;
   }
   .warn-btn:hover { background: #9c6617; }
+  .password-strength { margin-top: 8px; }
+  .password-strength-track { height: 7px; width: 100%; background: #eceae5; border-radius: 99px; overflow: hidden; }
+  .password-strength-fill { height: 100%; width: 0; border-radius: 99px; transition: width .2s ease, background-color .2s ease; background: #c0392b; }
+  .password-strength-meta { display:flex; justify-content:space-between; gap:8px; margin-top:6px; font-size:11px; color:var(--text-muted); }
+  #passwordStrengthLabel { font-weight:700; color:var(--text-secondary); }
+  .password-requirements { margin-top:8px; font-size:11px; color:var(--text-secondary); line-height:1.7; }
+  .password-requirements span { display:inline-block; margin-right:8px; }
+  .password-requirements .met { color:var(--success); font-weight:600; }
+  .other-violation-field { display:none; }
+  .other-violation-field.visible { display:block; animation:slideDown .2s ease; }
 
   /* captured face thumb in step 4 */
   .face-thumb {
@@ -1059,11 +1087,22 @@ if (isset($_GET['get_student'])) {
         <?= htmlspecialchars($_SESSION['cp_err']) ?><?php unset($_SESSION['cp_err']); ?>
       </div>
     <?php endif; ?>
-    <div class="field"><label>New Password</label>
-      <input type="password" name="new_password" placeholder="Min. 6 characters" required></div>
-    <div class="field"><label>Confirm Password</label>
-      <input type="password" name="confirm_password" placeholder="Repeat password" required></div>
-    <button type="submit" class="warn-btn">Change Password &amp; Continue</button>
+    <div class="field">
+      <label for="newPasswordInput">New Password</label>
+      <input type="password" id="newPasswordInput" name="new_password" placeholder="Create a strong password" required autocomplete="new-password">
+      <div class="password-strength" aria-live="polite">
+        <div class="password-strength-track"><div class="password-strength-fill" id="passwordStrengthFill"></div></div>
+        <div class="password-strength-meta"><span>Password strength</span><span id="passwordStrengthLabel">Enter a password</span></div>
+        <div class="password-requirements" id="passwordRequirements">
+          <span data-rule="length">8+ characters</span><span data-rule="lower">Lowercase</span>
+          <span data-rule="upper">Uppercase</span><span data-rule="number">Number</span>
+          <span data-rule="special">Special character</span>
+        </div>
+      </div>
+    </div>
+    <div class="field"><label for="confirmPasswordInput">Confirm Password</label>
+      <input type="password" id="confirmPasswordInput" name="confirm_password" placeholder="Repeat password" required autocomplete="new-password"></div>
+    <button type="submit" class="warn-btn" id="changePasswordBtn" disabled>Change Password &amp; Continue</button>
   </form>
 </div>
 <?php endif; ?>
@@ -1140,6 +1179,10 @@ if (isset($_GET['get_student'])) {
           <select name="violation" id="violationSelect" required>
             <option value="">Select category first</option>
           </select>
+        </div>
+        <div class="field other-violation-field" id="otherViolationField">
+          <label for="otherViolationInput">Specify Other Violation</label>
+          <input type="text" name="other_violation" id="otherViolationInput" maxlength="255" placeholder="Enter the violation not listed above" autocomplete="off">
         </div>
         <div class="field">
           <label>Description</label>
@@ -1274,6 +1317,18 @@ if (isset($_GET['get_student'])) {
   </div>
 </div>
 
+<!-- ── REQUIRED FACE CAPTURE MODAL ── -->
+<div class="modal-overlay modal-center" id="faceRequiredOverlay" role="dialog" aria-modal="true" aria-labelledby="faceRequiredTitle">
+  <div class="modal-sheet" style="border-radius:var(--radius);text-align:center">
+    <div class="confirm-icon" style="background:var(--warn-light)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#b7791f" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><circle cx="12" cy="12" r="10"/></svg>
+    </div>
+    <h2 class="modal-title" id="faceRequiredTitle">Face Capture Required</h2>
+    <p class="confirm-text" style="margin-top:10px">A student face photo is required before this violation report can be submitted. Please capture and confirm the student's face in the Student Verification section.</p>
+    <button type="button" class="submit-btn" onclick="goToFaceCapture()" style="width:100%">Go to Face Capture</button>
+  </div>
+</div>
+
 <!-- ── CONFIRM MODAL ── -->
 <div class="modal-overlay modal-center" id="confirmOverlay">
   <div class="modal-sheet" style="border-radius:var(--radius)">
@@ -1328,9 +1383,74 @@ const majorViolations = ['Academic Dishonesty','Theft','Physical Violence','Subs
 function loadViolations(cat) {
     const sel = document.getElementById('violationSelect');
     sel.innerHTML = '<option value="">Select violation</option>';
-    (cat === 'minor' ? minorViolations : majorViolations)
-        .forEach(v => sel.innerHTML += `<option value="${v}">${v}</option>`);
+    (cat === 'minor' ? minorViolations : majorViolations).forEach(v => {
+        const option = document.createElement('option');
+        option.value = v;
+        option.textContent = v;
+        sel.appendChild(option);
+    });
+    const others = document.createElement('option');
+    others.value = 'Others';
+    others.textContent = 'Others';
+    sel.appendChild(others);
+    sel.value = '';
+    toggleOtherViolationField();
 }
+
+function toggleOtherViolationField() {
+    const select = document.getElementById('violationSelect');
+    const wrapper = document.getElementById('otherViolationField');
+    const input = document.getElementById('otherViolationInput');
+    const show = select.value === 'Others';
+    wrapper.classList.toggle('visible', show);
+    input.required = show;
+    if (!show) input.value = '';
+}
+document.getElementById('violationSelect').addEventListener('change', toggleOtherViolationField);
+
+/* ── PASSWORD STRENGTH ── */
+(function initPasswordStrength() {
+    const passwordInput = document.getElementById('newPasswordInput');
+    if (!passwordInput) return;
+    const fill = document.getElementById('passwordStrengthFill');
+    const label = document.getElementById('passwordStrengthLabel');
+    const button = document.getElementById('changePasswordBtn');
+    const confirmInput = document.getElementById('confirmPasswordInput');
+    const requirements = document.getElementById('passwordRequirements');
+
+    function evaluate(value) {
+        const checks = {
+            length: value.length >= 8, lower: /[a-z]/.test(value),
+            upper: /[A-Z]/.test(value), number: /[0-9]/.test(value),
+            special: /[^A-Za-z0-9]/.test(value)
+        };
+        let score = (value.length >= 8 ? 1 : 0) + (value.length >= 12 ? 1 : 0) +
+            (checks.lower ? 1 : 0) + (checks.upper ? 1 : 0) +
+            (checks.number ? 1 : 0) + (checks.special ? 1 : 0);
+        let strength = 'Very Weak', color = '#c0392b';
+        if (!value) { strength = 'Enter a password'; score = 0; }
+        else if (score === 2) { strength = 'Weak'; color = '#d97706'; }
+        else if (score === 3) { strength = 'Medium'; color = '#2563eb'; }
+        else if (score >= 4 && score <= 5) { strength = 'Strong'; color = '#16834a'; }
+        else if (score === 6) { strength = 'Very Strong'; color = '#075e35'; }
+        return { checks, score, strength, color };
+    }
+    function update() {
+        const result = evaluate(passwordInput.value);
+        fill.style.width = (result.score / 6 * 100) + '%';
+        fill.style.backgroundColor = result.color;
+        label.textContent = result.strength;
+        label.style.color = result.color;
+        requirements.querySelectorAll('[data-rule]').forEach(item =>
+            item.classList.toggle('met', !!result.checks[item.dataset.rule]));
+        button.disabled = result.score < 4 || passwordInput.value !== confirmInput.value;
+        button.style.opacity = button.disabled ? '.55' : '1';
+        button.style.cursor = button.disabled ? 'not-allowed' : 'pointer';
+    }
+    passwordInput.addEventListener('input', update);
+    confirmInput.addEventListener('input', update);
+    update();
+})();
 
 /* ── FILE INPUT ── */
 function showFileName(input) {
@@ -1549,10 +1669,17 @@ function clearSignature() {
 }
 
 /* ── SUBMIT ── */
+function showFaceRequiredModal() {
+    document.getElementById('faceRequiredOverlay').classList.add('active');
+}
+function goToFaceCapture() {
+    document.getElementById('faceRequiredOverlay').classList.remove('active');
+    document.getElementById('faceCaptureBtn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 function confirmSubmit() {
     if (!document.getElementById('faceCaptureData').value) {
-        alert('Student face capture is required. Please use Capture Student Face before submitting.');
-        document.getElementById('faceCaptureBtn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        showFaceRequiredModal();
         return;
     }
     document.getElementById('signatureData').value = sigCanvas.toDataURL('image/png');
@@ -1565,8 +1692,7 @@ async function doSubmit() {
     const form = document.getElementById('reportForm');
     if (!document.getElementById('faceCaptureData').value) {
         closeConfirm();
-        alert('Student face capture is required. Please capture and confirm the student face first.');
-        document.getElementById('faceCaptureBtn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        showFaceRequiredModal();
         return;
     }
     const fileInput = document.getElementById('evidenceFile');
@@ -1640,6 +1766,9 @@ document.getElementById('cameraOverlay').addEventListener('click', function(e){
 });
 document.getElementById('confirmOverlay').addEventListener('click', function(e){
     if (e.target === this) closeConfirm();
+});
+document.getElementById('faceRequiredOverlay').addEventListener('click', function(e){
+    if (e.target === this) this.classList.remove('active');
 });
 </script>
 <script>
