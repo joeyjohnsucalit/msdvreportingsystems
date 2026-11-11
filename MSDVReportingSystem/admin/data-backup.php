@@ -727,6 +727,7 @@ $previewRisk = $pdo->query("
 ")->fetchAll();
 
 ?>
+<?php require_once 'theme-head.php'; ?>
 <!DOCTYPE html>
 <html lang="en">
 
@@ -883,7 +884,7 @@ $previewRisk = $pdo->query("
                     <span>User Management</span>
                 </a>
             </li>
-
+               <li><a href="theme-settings.php"><i class="fas fa-palette"></i><span>Theme Settings</span></a></li>
             <li>
                 <a href="../logout.php">
                     <i class="fas fa-sign-out-alt"></i>
