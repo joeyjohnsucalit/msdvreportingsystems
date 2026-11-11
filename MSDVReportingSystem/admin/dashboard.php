@@ -111,7 +111,7 @@ $vbd = $pdo->prepare("
     JOIN departments d
         ON s.department_id=d.id
     WHERE YEAR(v.date_submitted)=?
-    GROUP BY d.id, d.name
+    GROUP BY d.id
 ");
 $vbd->execute([$currentYear]);
 
@@ -142,7 +142,7 @@ $vbc = $pdo->prepare("
     JOIN departments d
         ON s.department_id=d.id
     WHERE YEAR(v.date_submitted)=?
-    GROUP BY c.id, c.name, d.id, d.name
+    GROUP BY c.id
     ORDER BY d.id
 ");
 $vbc->execute([$currentYear]);
@@ -202,7 +202,7 @@ $violations_list = [
     'Sexual Misconduct'
 ];
 ?>
-
+   <?php require_once 'theme-head.php'; ?>
 <!DOCTYPE html>
 <html lang="en">
 
@@ -349,7 +349,11 @@ $violations_list = [
                     <span>User Management</span>
                 </a>
             </li>
-
+            <li>
+                <a href="theme-settings.php">
+                    <i class="fas fa-palette"></i>
+                    <span>Theme Settings</span></a>
+                </li>
             <li>
                 <a href="../logout.php">
                     <i class="fas fa-sign-out-alt"></i>
@@ -1104,8 +1108,18 @@ $violations_list = [
 <script>
 
 const months = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec'
 ];
 
 
@@ -1122,16 +1136,32 @@ const G = '#f3f4f6';
 ========================================================= */
 
 const tip = {
+
     backgroundColor: '#111827',
+
     titleColor: '#f9fafb',
+
     bodyColor: '#d1d5db',
+
     padding: 10,
+
     cornerRadius: 8,
-    titleFont: { weight: '600', size: 12 },
-    bodyFont: { size: 11 },
+
+    titleFont: {
+        weight: '600',
+        size: 12
+    },
+
+    bodyFont: {
+        size: 11
+    },
+
     displayColors: true,
+
     boxWidth: 8,
+
     boxHeight: 8
+
 };
 
 
@@ -1142,16 +1172,39 @@ const tip = {
 const scalesBase = {
 
     y: {
+
         beginAtZero: true,
-        grid: { color: G, lineWidth: 1 },
-        border: { display: false },
-        ticks: { padding: 6, maxTicksLimit: 6 }
+
+        grid: {
+            color: G,
+            lineWidth: 1
+        },
+
+        border: {
+            display: false
+        },
+
+        ticks: {
+            padding: 6,
+            maxTicksLimit: 6
+        }
+
     },
 
     x: {
-        grid: { display: false },
-        border: { display: false },
-        ticks: { padding: 4 }
+
+        grid: {
+            display: false
+        },
+
+        border: {
+            display: false
+        },
+
+        ticks: {
+            padding: 4
+        }
+
     }
 
 };
@@ -1182,21 +1235,33 @@ let vpmChart = new Chart(
                     backgroundColor: (ctx) => {
 
                         const chart = ctx.chart;
-                        const { ctx: c, chartArea } = chart;
+
+                        const {
+                            ctx: c,
+                            chartArea
+                        } = chart;
 
                         if (!chartArea) {
                             return '#c7d7f8';
                         }
 
-                        const grad = c.createLinearGradient(
+                        const grad =
+                            c.createLinearGradient(
+                                0,
+                                chartArea.top,
+                                0,
+                                chartArea.bottom
+                            );
+
+                        grad.addColorStop(
                             0,
-                            chartArea.top,
-                            0,
-                            chartArea.bottom
+                            '#3b82f6'
                         );
 
-                        grad.addColorStop(0, '#3b82f6');
-                        grad.addColorStop(1, '#c7d7f8');
+                        grad.addColorStop(
+                            1,
+                            '#c7d7f8'
+                        );
 
                         return grad;
 
@@ -1228,8 +1293,13 @@ let vpmChart = new Chart(
             responsive: true,
 
             plugins: {
-                legend: { display: false },
+
+                legend: {
+                    display: false
+                },
+
                 tooltip: tip
+
             },
 
             scales: scalesBase
@@ -1242,7 +1312,9 @@ let vpmChart = new Chart(
 
 function updateVPM(y) {
 
-    fetch('ajax/chart-data.php?type=vpm&year=' + y)
+    fetch(
+        'ajax/chart-data.php?type=vpm&year=' + y
+    )
 
     .then(r => r.json())
 
@@ -1338,13 +1410,21 @@ let mvmChart = new Chart(
             responsive: true,
 
             interaction: {
+
                 mode: 'index',
+
                 intersect: false
+
             },
 
             plugins: {
-                legend: { display: false },
+
+                legend: {
+                    display: false
+                },
+
                 tooltip: tip
+
             },
 
             scales: scalesBase
@@ -1357,7 +1437,9 @@ let mvmChart = new Chart(
 
 function updateMVM(y) {
 
-    fetch('ajax/chart-data.php?type=mvm&year=' + y)
+    fetch(
+        'ajax/chart-data.php?type=mvm&year=' + y
+    )
 
     .then(r => r.json())
 
@@ -1426,23 +1508,50 @@ let deptChart = new Chart(
             responsive: true,
 
             plugins: {
-                legend: { display: false },
+
+                legend: {
+                    display: false
+                },
+
                 tooltip: tip
+
             },
 
             scales: {
 
                 x: {
+
                     beginAtZero: true,
-                    grid: { color: G },
-                    border: { display: false },
-                    ticks: { padding: 6, maxTicksLimit: 5 }
+
+                    grid: {
+                        color: G
+                    },
+
+                    border: {
+                        display: false
+                    },
+
+                    ticks: {
+                        padding: 6,
+                        maxTicksLimit: 5
+                    }
+
                 },
 
                 y: {
-                    grid: { display: false },
-                    border: { display: false },
-                    ticks: { padding: 8 }
+
+                    grid: {
+                        display: false
+                    },
+
+                    border: {
+                        display: false
+                    },
+
+                    ticks: {
+                        padding: 8
+                    }
+
                 }
 
             }
@@ -1455,7 +1564,9 @@ let deptChart = new Chart(
 
 function updateDept(y) {
 
-    fetch('ajax/chart-data.php?type=dept&year=' + y)
+    fetch(
+        'ajax/chart-data.php?type=dept&year=' + y
+    )
 
     .then(r => r.json())
 
@@ -1468,7 +1579,8 @@ function updateDept(y) {
         deptChart.data.datasets[0].backgroundColor =
             d.colors.map(c => c + '22');
 
-        deptChart.data.datasets[0].borderColor = d.colors;
+        deptChart.data.datasets[0].borderColor =
+            d.colors;
 
         deptChart.update();
 
@@ -1513,10 +1625,15 @@ let courseChart = new Chart(
                     borderWidth: 1.5,
 
                     borderRadius: {
+
                         topLeft: 4,
+
                         topRight: 4,
+
                         bottomLeft: 0,
+
                         bottomRight: 0
+
                     },
 
                     borderSkipped: false,
@@ -1534,8 +1651,13 @@ let courseChart = new Chart(
             responsive: true,
 
             plugins: {
-                legend: { display: false },
+
+                legend: {
+                    display: false
+                },
+
                 tooltip: tip
+
             },
 
             scales: scalesBase
@@ -1548,7 +1670,9 @@ let courseChart = new Chart(
 
 function updateCourse(y) {
 
-    fetch('ajax/chart-data.php?type=course&year=' + y)
+    fetch(
+        'ajax/chart-data.php?type=course&year=' + y
+    )
 
     .then(r => r.json())
 
@@ -1561,7 +1685,8 @@ function updateCourse(y) {
         courseChart.data.datasets[0].backgroundColor =
             d.colors.map(c => c + '28');
 
-        courseChart.data.datasets[0].borderColor = d.colors;
+        courseChart.data.datasets[0].borderColor =
+            d.colors;
 
         courseChart.update();
 
@@ -1594,7 +1719,8 @@ let svChart = new Chart(
 
                     borderColor: '#e05454',
 
-                    backgroundColor: 'rgba(224,84,84,0.06)',
+                    backgroundColor:
+                        'rgba(224,84,84,0.06)',
 
                     tension: 0.4,
 
@@ -1606,7 +1732,8 @@ let svChart = new Chart(
 
                     pointHoverRadius: 5,
 
-                    pointHoverBackgroundColor: '#e05454',
+                    pointHoverBackgroundColor:
+                        '#e05454',
 
                     pointHoverBorderColor: '#fff',
 
@@ -1622,7 +1749,8 @@ let svChart = new Chart(
 
                     borderColor: '#4f8ef7',
 
-                    backgroundColor: 'rgba(79,142,247,0.06)',
+                    backgroundColor:
+                        'rgba(79,142,247,0.06)',
 
                     tension: 0.4,
 
@@ -1634,7 +1762,8 @@ let svChart = new Chart(
 
                     pointHoverRadius: 5,
 
-                    pointHoverBackgroundColor: '#4f8ef7',
+                    pointHoverBackgroundColor:
+                        '#4f8ef7',
 
                     pointHoverBorderColor: '#fff',
 
@@ -1650,7 +1779,8 @@ let svChart = new Chart(
 
                     borderColor: '#f4973a',
 
-                    backgroundColor: 'rgba(244,151,58,0.05)',
+                    backgroundColor:
+                        'rgba(244,151,58,0.05)',
 
                     tension: 0.4,
 
@@ -1662,7 +1792,8 @@ let svChart = new Chart(
 
                     pointHoverRadius: 5,
 
-                    pointHoverBackgroundColor: '#f4973a',
+                    pointHoverBackgroundColor:
+                        '#f4973a',
 
                     pointHoverBorderColor: '#fff',
 
@@ -1679,13 +1810,21 @@ let svChart = new Chart(
             responsive: true,
 
             interaction: {
+
                 mode: 'index',
+
                 intersect: false
+
             },
 
             plugins: {
-                legend: { display: false },
+
+                legend: {
+                    display: false
+                },
+
                 tooltip: tip
+
             },
 
             scales: scalesBase
@@ -1698,9 +1837,11 @@ let svChart = new Chart(
 
 function updateSV() {
 
-    const y = document.getElementById('svYear').value;
+    const y =
+        document.getElementById('svYear').value;
 
-    const v = document.getElementById('svViolation').value;
+    const v =
+        document.getElementById('svViolation').value;
 
 
     fetch(
@@ -1775,13 +1916,17 @@ function fmtDate(s) {
 
 function renderNotifs(data) {
 
-    const badge = document.getElementById('notifBadge');
+    const badge =
+        document.getElementById('notifBadge');
 
-    const pill = document.getElementById('notifPill');
+    const pill =
+        document.getElementById('notifPill');
 
-    const listEl = document.getElementById('notifList');
+    const listEl =
+        document.getElementById('notifList');
 
-    const bellBtn = document.getElementById('bellBtn');
+    const bellBtn =
+        document.getElementById('bellBtn');
 
 
     const isOpen =
@@ -1800,7 +1945,8 @@ function renderNotifs(data) {
 
         } else {
 
-            const nb = document.createElement('span');
+            const nb =
+                document.createElement('span');
 
             nb.id = 'notifBadge';
 
@@ -1815,7 +1961,8 @@ function renderNotifs(data) {
 
         if (pill) {
 
-            pill.textContent = data.unread + ' new';
+            pill.textContent =
+                data.unread + ' new';
 
             pill.classList.add('visible');
 
@@ -1907,22 +2054,29 @@ function renderNotifs(data) {
 
 function markRead(id, el) {
 
-    fetch('ajax/notifications.php?action=read&id=' + id);
+    fetch(
+        'ajax/notifications.php?action=read&id=' + id
+    );
 
 
     el.classList.remove('unread');
 
-    el.querySelector('.notif-dot')?.remove();
+    el.querySelector(
+        '.notif-dot'
+    )?.remove();
 
 
-    const badge = document.getElementById('notifBadge');
+    const badge =
+        document.getElementById('notifBadge');
 
-    const pill = document.getElementById('notifPill');
+    const pill =
+        document.getElementById('notifPill');
 
 
     if (badge) {
 
-        const n = parseInt(badge.textContent) - 1;
+        const n =
+            parseInt(badge.textContent) - 1;
 
         if (n <= 0) {
 
@@ -1939,7 +2093,8 @@ function markRead(id, el) {
 
     if (pill) {
 
-        const n = parseInt(pill.textContent) - 1;
+        const n =
+            parseInt(pill.textContent) - 1;
 
         if (n <= 0) {
 
@@ -1947,7 +2102,8 @@ function markRead(id, el) {
 
         } else {
 
-            pill.textContent = n + ' new';
+            pill.textContent =
+                n + ' new';
 
         }
 
@@ -1962,21 +2118,28 @@ function markRead(id, el) {
 
 function markAllRead() {
 
-    fetch('ajax/notifications.php?action=read_all');
+    fetch(
+        'ajax/notifications.php?action=read_all'
+    );
 
 
     document
-        .querySelectorAll('#notifList .notif-item')
+        .querySelectorAll(
+            '#notifList .notif-item'
+        )
         .forEach(el => {
 
             el.classList.remove('unread');
 
-            el.querySelector('.notif-dot')?.remove();
+            el.querySelector(
+                '.notif-dot'
+            )?.remove();
 
         });
 
 
-    const badge = document.getElementById('notifBadge');
+    const badge =
+        document.getElementById('notifBadge');
 
     if (badge) {
         badge.style.display = 'none';
@@ -1998,7 +2161,9 @@ document.addEventListener(
     'DOMContentLoaded',
     () => {
 
-        fetch('ajax/notifications.php?action=poll')
+        fetch(
+            'ajax/notifications.php?action=poll'
+        )
 
         .then(r => r.ok ? r.json() : null)
 
@@ -2014,9 +2179,13 @@ document.addEventListener(
         setInterval(
             () => {
 
-                fetch('ajax/notifications.php?action=poll')
+                fetch(
+                    'ajax/notifications.php?action=poll'
+                )
 
-                .then(r => r.ok ? r.json() : null)
+                .then(
+                    r => r.ok ? r.json() : null
+                )
 
                 .then(d => {
 
