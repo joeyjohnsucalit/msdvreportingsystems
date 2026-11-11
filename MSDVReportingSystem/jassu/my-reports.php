@@ -3,7 +3,7 @@ session_start();
 require_once '../db/connection.php';
 $allowedRoles = ['teacher','csu','jassu','nurse'];
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], $allowedRoles)) {
-    header('Location: ../index.php'); exit;
+    header('Location: ../login.php'); exit;
 }
 
 $role = $_SESSION['role'];
