@@ -48,6 +48,13 @@ if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
     $violation   = trim($_POST['violation'] ?? '');
     $otherViolation = trim($_POST['other_violation'] ?? '');
     $description = trim($_POST['description'] ?? '');
+    $faceConsent = isset($_POST['face_consent']) && $_POST['face_consent'] === '1';
+
+    if (!$faceConsent) {
+        $err = 'Please obtain and confirm the student’s consent before face capture and report submission.';
+    } elseif (empty($_POST['face_capture_data'])) {
+        $err = 'Please complete the automatic student face capture before submitting the report.';
+    }
 
     // Use the reporter's custom violation when "Others" is selected.
     if ($violation === 'Others') {
@@ -62,7 +69,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
     $student = $sCheck->fetch();
 
     if ($err) {
-        // Keep the validation message for an empty custom violation.
+        // Preserve the consent / custom violation validation message.
     } elseif (!$student) {
         $err = 'Student ID not found in records.';
     } elseif ($ownSid && $ownSid === $sid) {
@@ -629,15 +636,7 @@ if (isset($_GET['get_student'])) {
   }
   #cameraOverlay.face-capture-mode #cameraStream { position:absolute; inset:0; width:100%; height:100%; max-height:none; aspect-ratio:auto; object-fit:cover; border-radius:0; }
   #cameraOverlay.face-capture-mode .face-guide-overlay { position:absolute; z-index:2; width:min(64vw, 560px); height:84%; max-height:84%; object-fit:contain; opacity:.92; pointer-events:none; filter:drop-shadow(0 0 2px rgba(0,0,0,.7)); }
-  .face-corner { display:none; }
-  #cameraOverlay.face-capture-mode .face-corner { display:block; position:absolute; z-index:3; width:clamp(40px, 11vw, 108px); height:clamp(40px, 11vw, 108px); pointer-events:none; }
-  #cameraOverlay.face-capture-mode .face-corner:before, #cameraOverlay.face-capture-mode .face-corner:after { content:""; position:absolute; display:block; background:#2582ff; border-radius:5px; }
-  #cameraOverlay.face-capture-mode .face-corner.tl { top:5%; left:2%; }
-  #cameraOverlay.face-capture-mode .face-corner.tr { top:5%; right:2%; transform:scaleX(-1); }
-  #cameraOverlay.face-capture-mode .face-corner.bl { bottom:5%; left:2%; transform:scaleY(-1); }
-  #cameraOverlay.face-capture-mode .face-corner.br { bottom:5%; right:2%; transform:scale(-1); }
-  #cameraOverlay.face-capture-mode .face-corner:before { left:0; top:0; width:100%; height:9px; }
-  #cameraOverlay.face-capture-mode .face-corner:after { left:0; top:0; width:9px; height:100%; }
+  .face-corner { display:none !important; }
   #cameraOverlay.face-capture-mode .face-capture-bottom { flex-shrink:0; padding-top:16px; }
   #cameraOverlay.face-capture-mode .face-capture-actions { display:flex; justify-content:center; align-items:center; padding:8px 0 max(8px, env(safe-area-inset-bottom)); }
   #cameraOverlay.face-capture-mode .camera-choice { display:flex; align-items:center; justify-content:center; gap:12px; width:max-content; max-width:100%; margin:0 auto 20px; padding:12px 20px; color:#f7f8fc; background:#10151e; border:1px solid #3b4351; border-radius:28px; font-size:15px; font-weight:650; }
@@ -723,6 +722,12 @@ if (isset($_GET['get_student'])) {
     color: var(--text-secondary);
     margin-bottom: 16px;
   }
+
+  .consent-panel { margin:0 0 18px; padding:15px 16px; border:1px solid #d7dce5; border-radius:12px; background:#f8fafc; }
+  .consent-check { display:flex; align-items:flex-start; gap:11px; cursor:pointer; color:#263247; font-size:14px; line-height:1.55; }
+  .consent-check input { width:18px; height:18px; flex:0 0 18px; margin:2px 0 0; accent-color:#17366f; }
+  .consent-note { margin:8px 0 0 29px; color:#64748b; font-size:12px; line-height:1.45; }
+  .face-auto-countdown { position:absolute; z-index:5; inset:0; display:flex; align-items:center; justify-content:center; color:#fff; font-size:clamp(64px,18vw,120px); font-weight:800; text-shadow:0 3px 18px rgba(0,0,0,.8); background:rgba(0,0,0,.12); pointer-events:none; }
 
   /* camera */
   #cameraStream {
@@ -1114,6 +1119,13 @@ if (isset($_GET['get_student'])) {
         <span class="section-title">Student Verification</span>
       </div>
       <div class="section-body">
+        <div class="consent-panel">
+          <label class="consent-check">
+            <input type="checkbox" id="faceConsent" name="face_consent" value="1" onchange="updateFaceConsent()">
+            <span><strong>Student Consent</strong><br>I confirm that the student has been informed and has voluntarily agreed to have their face photograph captured and used for this violation report.</span>
+          </label>
+          <p class="consent-note">Ask the student for permission before checking this box or starting the camera.</p>
+        </div>
         <div class="field">
           <label>Face Capture</label>
           <button type="button" class="icon-btn" id="faceCaptureBtn" onclick="openCamera('face')">
@@ -1161,8 +1173,7 @@ if (isset($_GET['get_student'])) {
     <div id="cameraLive">
       <div class="camera-preview-stage">
         <video id="cameraStream" autoplay playsinline muted></video>
-        <div class="face-corner tl" aria-hidden="true"></div><div class="face-corner tr" aria-hidden="true"></div>
-        <div class="face-corner bl" aria-hidden="true"></div><div class="face-corner br" aria-hidden="true"></div>
+        <div id="faceAutoCountdown" class="face-auto-countdown" style="display:none" aria-live="polite">3</div>
         <svg class="face-guide-overlay" id="faceGuideOverlay" viewBox="0 0 520 800" role="img" aria-label="Geometric face alignment guide" xmlns="http://www.w3.org/2000/svg" style="display:none">
           <g fill="none" stroke="#f1f3f8" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" opacity="0.94">
             <!-- outer head silhouette -->
@@ -1330,9 +1341,23 @@ function clearCamEvidence() {
 }
 
 /* ── CAMERA ── */
-let stream = null, cameraMode = '', evidenceCamData = null;
+let stream = null, cameraMode = '', evidenceCamData = null, faceCountdownTimer = null;
+
+function updateFaceConsent() {
+    const consent = document.getElementById('faceConsent');
+    const button = document.getElementById('faceCaptureBtn');
+    if (button) {
+        button.disabled = !consent || !consent.checked;
+        button.style.opacity = button.disabled ? '.55' : '1';
+        button.style.cursor = button.disabled ? 'not-allowed' : 'pointer';
+    }
+}
 
 function openCamera(mode) {
+    if (mode === 'face' && !document.getElementById('faceConsent').checked) {
+        alert('Please obtain the student’s consent before starting face capture.');
+        return;
+    }
     cameraMode = mode;
     document.getElementById('cameraModalTitle').textContent =
         mode === 'face' ? 'Capture Student Face' : 'Take Photo Evidence';
@@ -1360,14 +1385,47 @@ function openCamera(mode) {
     navigator.mediaDevices.getUserMedia(constraints)
         .then(s => {
             stream = s;
-            document.getElementById('cameraStream').srcObject = s;
+            const video = document.getElementById('cameraStream');
+            video.srcObject = s;
             document.getElementById('cameraOverlay').classList.add('active');
+            if (mode === 'face') {
+                const beginCountdown = () => startFaceAutoCountdown();
+                if (video.readyState >= 2 && video.videoWidth > 0) beginCountdown();
+                else video.addEventListener('loadeddata', beginCountdown, { once: true });
+            }
         })
         .catch(() => alert('Camera not accessible. Please allow camera permission.'));
 }
 
+function startFaceAutoCountdown() {
+    clearInterval(faceCountdownTimer);
+    const counter = document.getElementById('faceAutoCountdown');
+    if (!counter || cameraMode !== 'face') return;
+    let remaining = 3;
+    counter.textContent = remaining;
+    counter.style.display = 'flex';
+    faceCountdownTimer = setInterval(() => {
+        remaining--;
+        if (remaining <= 0) {
+            clearInterval(faceCountdownTimer);
+            faceCountdownTimer = null;
+            counter.style.display = 'none';
+            capturePhoto();
+        } else {
+            counter.textContent = remaining;
+        }
+    }, 1000);
+}
+
 function capturePhoto() {
     const video = document.getElementById('cameraStream');
+    if (!video.videoWidth || !video.videoHeight) {
+        alert('Camera is still starting. Please wait a moment.');
+        return;
+    }
+    clearInterval(faceCountdownTimer);
+    faceCountdownTimer = null;
+    document.getElementById('faceAutoCountdown').style.display = 'none';
     const canvas = document.getElementById('cameraCanvas');
     canvas.width = video.videoWidth;
     canvas.height = video.videoHeight;
@@ -1380,6 +1438,7 @@ function capturePhoto() {
 function retakePhoto() {
     document.getElementById('cameraLive').style.display = 'flex';
     document.getElementById('cameraReview').style.display = 'none';
+    if (cameraMode === 'face') startFaceAutoCountdown();
 }
 
 function confirmPhoto() {
@@ -1403,6 +1462,10 @@ function confirmPhoto() {
 }
 
 function stopCamera() {
+    clearInterval(faceCountdownTimer);
+    faceCountdownTimer = null;
+    const countdown = document.getElementById('faceAutoCountdown');
+    if (countdown) countdown.style.display = 'none';
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
     const overlay = document.getElementById('cameraOverlay');
     overlay.classList.remove('active', 'face-capture-mode', 'evidence-capture-mode');
@@ -1410,6 +1473,8 @@ function stopCamera() {
 }
 
 /* ── SIGNATURE ── */
+updateFaceConsent();
+
 const sigCanvas = document.getElementById('signatureCanvas');
 const sigCtx = sigCanvas.getContext('2d');
 sigCtx.strokeStyle = '#1a1a1a';
