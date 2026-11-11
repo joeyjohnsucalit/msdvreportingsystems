@@ -708,7 +708,7 @@ if (isset($_GET['get_student'])) {
   }
   #cameraOverlay.face-capture-mode #cameraStream { position:absolute; inset:0; width:100%; height:100%; max-height:none; aspect-ratio:auto; object-fit:cover; border-radius:0; }
   #cameraOverlay.face-capture-mode .face-guide-overlay { position:absolute; z-index:2; inset:0; display:block; pointer-events:none; }
-  #cameraOverlay.face-capture-mode .face-oval { position:absolute; left:50%; top:48%; transform:translate(-50%,-50%); width:min(58%,390px); height:min(65%,520px); border:4px solid #f5b942; border-radius:50% / 46%; box-shadow:0 0 0 9999px rgba(0,0,0,.20); transition:border-color .18s,box-shadow .18s; }
+  #cameraOverlay.face-capture-mode .face-oval { position:absolute; left:50%; top:48%; transform:translate(-50%,-50%); width:min(58%,390px); height:min(78%,620px); border:4px solid #f5b942; border-radius:50% / 46%; box-shadow:0 0 0 9999px rgba(0,0,0,.20); transition:border-color .18s,box-shadow .18s; }
   #cameraOverlay.face-capture-mode .face-oval.out { border-color:#ef4444; box-shadow:0 0 0 9999px rgba(0,0,0,.25),0 0 18px rgba(239,68,68,.35); }
   #cameraOverlay.face-capture-mode .face-oval.good { border-color:#22c55e; box-shadow:0 0 0 9999px rgba(0,0,0,.18),0 0 22px rgba(34,197,94,.5); }
   #cameraOverlay.face-capture-mode .face-detection-status { flex-shrink:0; text-align:center; padding:12px 8px 0; color:#f5b942; font-size:14px; font-weight:650; }
@@ -1091,6 +1091,77 @@ if (isset($_GET['get_student'])) {
   #cameraOverlay.face-capture-mode .modal-row .icon-btn:hover { background: rgba(255,255,255,.16); border-color: #fff; color: #fff; }
   #cameraOverlay.face-capture-mode .modal-row .submit-btn { background: #22a559; }
   #cameraOverlay.face-capture-mode .modal-row .submit-btn:hover { background: #1b8a49; }
+
+  /* ═══════════ EVIDENCE CAMERA UI (native camera-app style) ═══════════ */
+  #cameraOverlay.evidence-capture-mode .modal-sheet { padding: 0; background: #000; }
+
+  /* Camera fills the whole screen, no card */
+  #cameraOverlay.evidence-capture-mode .camera-preview-stage { margin: 0; border-radius: 0; min-height: 0; }
+
+  /* Rule-of-thirds grid */
+  #cameraOverlay.evidence-capture-mode .camera-preview-stage::after {
+    content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+    background:
+      linear-gradient(to right, transparent calc(33.33% - .5px), rgba(255,255,255,.28) calc(33.33% - .5px), rgba(255,255,255,.28) calc(33.33% + .5px), transparent calc(33.33% + .5px), transparent calc(66.66% - .5px), rgba(255,255,255,.28) calc(66.66% - .5px), rgba(255,255,255,.28) calc(66.66% + .5px), transparent calc(66.66% + .5px)),
+      linear-gradient(to bottom, transparent calc(33.33% - .5px), rgba(255,255,255,.28) calc(33.33% - .5px), rgba(255,255,255,.28) calc(33.33% + .5px), transparent calc(33.33% + .5px), transparent calc(66.66% - .5px), rgba(255,255,255,.28) calc(66.66% - .5px), rgba(255,255,255,.28) calc(66.66% + .5px), transparent calc(66.66% + .5px));
+  }
+
+  /* Floating top bar: round back button + centered title */
+  #cameraOverlay.evidence-capture-mode .face-capture-topbar {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+    padding: max(14px, env(safe-area-inset-top)) 16px 28px;
+    background: linear-gradient(to bottom, rgba(0,0,0,.65), transparent);
+    pointer-events: none;
+  }
+  #cameraOverlay.evidence-capture-mode .face-capture-nav {
+    pointer-events: auto; width: 42px; height: 42px; padding: 0; justify-content: center;
+    border-radius: 50%; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.25);
+  }
+  #cameraOverlay.evidence-capture-mode .face-capture-nav span { display: none; }
+  #cameraOverlay.evidence-capture-mode .face-capture-nav svg { width: 20px; height: 20px; }
+  #cameraOverlay.evidence-capture-mode .face-capture-heading {
+    position: absolute; top: max(14px, env(safe-area-inset-top)); left: 70px; right: 70px; z-index: 11;
+    padding: 0; height: 42px; display: flex !important; align-items: center; justify-content: center; pointer-events: none;
+  }
+  #cameraOverlay.evidence-capture-mode .modal-title { font-size: 16px; font-weight: 600; margin: 0; }
+  #cameraOverlay.evidence-capture-mode .modal-sub { display: none; }
+
+  /* Bottom controls: Cancel on the left, big round shutter in the center */
+  #cameraOverlay.evidence-capture-mode #standardCameraActions {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 10; margin: 0;
+    display: grid !important; grid-template-columns: 1fr auto 1fr; align-items: center;
+    padding: 40px 20px max(22px, env(safe-area-inset-bottom));
+    background: linear-gradient(to top, rgba(0,0,0,.75), transparent);
+  }
+  #cameraOverlay.evidence-capture-mode #standardCameraActions .icon-btn {
+    grid-column: 1; justify-self: start; flex: none; min-height: 0; padding: 10px 18px;
+    border-radius: 999px; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.25); color: #fff;
+  }
+  #cameraOverlay.evidence-capture-mode #standardCameraActions .submit-btn {
+    grid-column: 2; flex: none; width: 76px; height: 76px; min-height: 0; padding: 0; margin: 4px;
+    border-radius: 50%; font-size: 0; background: #fff;
+    box-shadow: inset 0 0 0 5px #000, 0 0 0 4px #fff;
+  }
+  #cameraOverlay.evidence-capture-mode #standardCameraActions .submit-btn svg { display: none; }
+  #cameraOverlay.evidence-capture-mode #standardCameraActions .submit-btn:hover { background: #fff; }
+  #cameraOverlay.evidence-capture-mode #standardCameraActions .submit-btn:active { transform: scale(.92); }
+
+  /* Review screen: full-screen photo + floating buttons */
+  #cameraOverlay.evidence-capture-mode #cameraReview { padding: 0; justify-content: stretch; }
+  #cameraOverlay.evidence-capture-mode #capturedImgEl {
+    flex: 1; height: 100%; max-height: none; object-fit: contain; background: #000; border-radius: 0;
+  }
+  #cameraOverlay.evidence-capture-mode #cameraReview .modal-row {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 10; margin: 0; gap: 12px;
+    padding: 40px 20px max(22px, env(safe-area-inset-bottom));
+    background: linear-gradient(to top, rgba(0,0,0,.8), transparent);
+  }
+  #cameraOverlay.evidence-capture-mode #cameraReview .modal-row button { min-height: 54px; border-radius: 999px; font-size: 15px; }
+  #cameraOverlay.evidence-capture-mode #cameraReview .modal-row .icon-btn {
+    background: rgba(0,0,0,.45); border-color: rgba(255,255,255,.3); color: #fff;
+  }
+  #cameraOverlay.evidence-capture-mode #cameraReview .modal-row .submit-btn { background: #fff; color: #111; }
+  #cameraOverlay.evidence-capture-mode #cameraReview .modal-row .submit-btn:hover { background: #e9e9ee; }
 </style>
 </head>
 <body>
