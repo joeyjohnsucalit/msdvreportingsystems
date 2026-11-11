@@ -60,8 +60,10 @@ if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
         $err = 'Invalid violation category.';
     } elseif ($violation === '') {
         $err = 'Please select a violation.';
+    } elseif (empty($_POST['face_capture_data'])) {
+        $err = 'Student face capture is required before submitting this report.';
     } else {
-        // Evidence can come from either the file picker OR the camera.
+        // Evidence is optional and can come from either the file picker OR the camera.
         // Images are stored in TiDB (stored_images table) so they survive redeploys.
         $evidenceBytes = null;
         $uploadError = $_FILES['evidence']['error'] ?? UPLOAD_ERR_NO_FILE;
@@ -92,8 +94,11 @@ if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
             }
         }
 
-        if (!$err && $evidenceBytes === null) {
-            $err = 'No evidence image was received. Please choose an image or take a photo, confirm the preview, and submit again.';
+        // Evidence photo is optional. A report may be submitted without it.
+
+        $faceBytes = decodeImageDataUrl($_POST['face_capture_data'] ?? '');
+        if (!$err && $faceBytes === null) {
+            $err = 'Student face capture is required. Please capture and confirm the student face.';
         }
 
         $evidencePath = $facePath = $sigPath = null;
@@ -101,14 +106,12 @@ if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
         // Store uploaded images using the existing image-storage helper.
         if (!$err) {
             try {
-                $evidencePath = storeImage($pdo, $evidenceBytes, 'evidence');
-
-                if (!empty($_POST['face_capture_data'])) {
-                    $faceBytes = decodeImageDataUrl($_POST['face_capture_data']);
-                    if ($faceBytes !== null) {
-                        $facePath = storeImage($pdo, $faceBytes, 'face');
-                    }
+                if ($evidenceBytes !== null) {
+                    $evidencePath = storeImage($pdo, $evidenceBytes, 'evidence');
                 }
+
+                // Face capture is mandatory for every submitted report.
+                $facePath = storeImage($pdo, $faceBytes, 'face');
 
                 if (!empty($_POST['signature_data'])) {
                     $sigBytes = decodeImageDataUrl($_POST['signature_data']);
@@ -751,7 +754,7 @@ if (isset($_GET['get_student'])) {
   #cameraOverlay.evidence-capture-mode .camera-preview-stage { position:relative; flex:1; min-height:220px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#000; border-radius:0; margin:24px 0 0; }
   #cameraOverlay.evidence-capture-mode #cameraStream { position:absolute; inset:0; width:100%; height:100%; max-height:none; aspect-ratio:auto; object-fit:cover; border-radius:0; }
   #cameraOverlay.evidence-capture-mode .face-corner, #cameraOverlay.evidence-capture-mode .face-guide-overlay { display:none !important; }
-  #cameraOverlay.evidence-capture-mode #standardCameraActions { display:none !important; }
+  #cameraOverlay.evidence-capture-mode #standardCameraActions { display:flex !important; }
   #cameraOverlay.evidence-capture-mode .face-capture-bottom { display:block; flex-shrink:0; padding-top:16px; }
   #cameraOverlay.evidence-capture-mode .face-capture-actions { display:flex; justify-content:center; align-items:center; padding:8px 0 max(8px, env(safe-area-inset-bottom)); }
   #cameraOverlay.evidence-capture-mode .face-shutter { width:clamp(76px, 12vw, 112px); height:clamp(76px, 12vw, 112px); border-radius:50%; border:7px solid #f8faff; background:#287cf4; box-shadow:inset 0 0 0 5px #0d1b32; cursor:pointer; padding:0; }
@@ -1214,7 +1217,7 @@ if (isset($_GET['get_student'])) {
   <div class="modal-sheet" style="border-radius:var(--radius)">
     <div class="confirm-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg></div>
     <h2 class="modal-title" id="faceConsentTitle" style="text-align:center">Student Face Capture Consent</h2>
-    <p class="confirm-text" style="text-align:left;margin-top:12px">Before continuing, the student must understand and agree to the capture of a facial photograph. The photo will be collected for documentation related to the MSDV Reporting System. Face positioning is used only to guide photo capture; the system does not recognize or identify the student. It will be stored with the report and made available only to personnel authorized to handle student discipline records. The camera will start only after consent is given. The student may decline; in that case, no face photo will be taken. Please capture only with the student's informed permission and follow the school's privacy and data-retention policies.</p>
+    <p class="confirm-text" style="text-align:left;margin-top:12px">Before continuing, the student must understand and agree to the capture of a facial photograph. The photo will be collected for documentation related to the MSDV Reporting System. Face positioning is used only to guide photo capture; the system does not recognize or identify the student. It will be stored with the report and made available only to personnel authorized to handle student discipline records. The camera will start only after consent is given. The student may decline consent, but a report cannot be submitted unless the student agrees to the required face capture. Please capture only with the student's informed permission and follow the school's privacy and data-retention policies.</p>
     <div style="display:flex;gap:8px">
       <button type="button" class="icon-btn" style="flex:1;justify-content:center" onclick="declineFaceConsent()">Decline</button>
       <button type="button" class="submit-btn" style="flex:1" onclick="acceptFaceConsent()">I Agree &amp; Proceed</button>
@@ -1427,7 +1430,7 @@ async function detectFaceContinuously(){
 async function openCamera(mode){
   cameraMode=mode;
   document.getElementById('cameraModalTitle').textContent=mode==='face'?'Capture Student Face':'Take Photo Evidence';
-  document.getElementById('cameraModalSub').textContent=mode==='face'?'Align your face inside the oval and hold still for automatic capture.':'Capture the evidence clearly.';
+  document.getElementById('cameraModalSub').textContent=mode==='face'?'Use the back camera. Position the student's face inside the oval and hold still for automatic capture.':'Capture the evidence clearly.';
   document.getElementById('cameraLive').style.display='flex';
   document.getElementById('cameraReview').style.display='none';
   const overlay=document.getElementById('cameraOverlay');
@@ -1441,7 +1444,7 @@ async function openCamera(mode){
   document.getElementById('standardCameraActions').style.display=mode==='evidence'?'flex':'none';
   resetFaceDetection();
   try{
-    const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:mode==='face'?{ideal:'user'}:{ideal:'environment'},width:{ideal:1280},height:{ideal:960}}});
+    const s=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:960}}});
     stream=s;
     const video=document.getElementById('cameraStream');video.srcObject=s;
     overlay.classList.add('active');await video.play();
@@ -1454,7 +1457,6 @@ function capturePhoto(){
   if(!video.videoWidth||!video.videoHeight)return;
   canvas.width=video.videoWidth;canvas.height=video.videoHeight;
   const ctx=canvas.getContext('2d');
-  if(cameraMode==='face'){ctx.translate(canvas.width,0);ctx.scale(-1,1);}
   ctx.drawImage(video,0,0);
   document.getElementById('capturedImgEl').src=canvas.toDataURL('image/png');
   document.getElementById('cameraLive').style.display='none';
@@ -1528,6 +1530,11 @@ function clearSignature() {
 
 /* ── SUBMIT ── */
 function confirmSubmit() {
+    if (!document.getElementById('faceCaptureData').value) {
+        alert('Student face capture is required. Please use Capture Student Face before submitting.');
+        document.getElementById('faceCaptureBtn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
     document.getElementById('signatureData').value = sigCanvas.toDataURL('image/png');
     document.getElementById('confirmOverlay').classList.add('active');
 }
@@ -1536,6 +1543,12 @@ function closeConfirm() {
 }
 async function doSubmit() {
     const form = document.getElementById('reportForm');
+    if (!document.getElementById('faceCaptureData').value) {
+        closeConfirm();
+        alert('Student face capture is required. Please capture and confirm the student face first.');
+        document.getElementById('faceCaptureBtn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        return;
+    }
     const fileInput = document.getElementById('evidenceFile');
     const selectedFile = fileInput && fileInput.files ? fileInput.files[0] : null;
 
