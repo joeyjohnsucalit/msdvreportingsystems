@@ -1,6 +1,14 @@
 <?php
 session_start();
+
+// Use Philippine Standard Time (PHT, UTC+8) for violation timestamps.
+date_default_timezone_set('Asia/Manila');
+
 require_once '../db/connection.php';
+
+// Keep MySQL/TiDB date functions (NOW(), CURRENT_TIMESTAMP) in Philippine time
+// for this database connection.
+$pdo->exec("SET time_zone = '+08:00'");
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header('Location: ../login.php'); exit;
 }
