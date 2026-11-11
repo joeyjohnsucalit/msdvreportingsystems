@@ -24,9 +24,6 @@ if (isset($_POST['action']) && $_POST['action'] === 'first_change_pass') {
     } else {
         $pdo->prepare("UPDATE users SET password=?, is_first_login=0 WHERE id=?")
             ->execute([password_hash($new, PASSWORD_DEFAULT), $_SESSION['user_id']]);
-        $pdo->prepare("UPDATE users SET remember_token=NULL, remember_token_expires=NULL WHERE id=?")
-            ->execute([$_SESSION['user_id']]);
-        setcookie('remember_token', '', time() - 3600, '/');
         session_destroy();
         header('Location: ../login.php?changed=1'); exit;
     }
@@ -997,6 +994,174 @@ if (isset($_GET['get_student'])) {
 
   .sb-foot { padding: 12px 10px; border-top: 1px solid var(--border); }
   .sb-link.logout:hover { background: var(--danger-light); color: var(--danger); }
+
+  /* ═══════════ FACE CAPTURE UI (override) ═══════════ */
+  #cameraOverlay.face-capture-mode .modal-sheet {
+    background: radial-gradient(120% 80% at 50% 0%, #0f1a2e 0%, #05080f 60%, #020304 100%);
+    padding: max(14px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+  }
+
+  /* Back button as a pill */
+  #cameraOverlay.face-capture-mode .face-capture-nav {
+    gap: 8px; padding: 8px 16px 8px 10px; font-size: 14px;
+    background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14);
+    border-radius: 999px; backdrop-filter: blur(6px); transition: background .15s;
+  }
+  #cameraOverlay.face-capture-mode .face-capture-nav:hover { background: rgba(255,255,255,.16); }
+  #cameraOverlay.face-capture-mode .face-capture-nav svg { width: 20px; height: 20px; }
+
+  /* Heading */
+  #cameraOverlay.face-capture-mode .face-capture-heading { padding-top: 14px; }
+  #cameraOverlay.face-capture-mode .modal-title { font-size: clamp(20px, 4vw, 28px); font-weight: 700; margin-bottom: 6px; }
+  #cameraOverlay.face-capture-mode .modal-sub { font-size: clamp(12px, 2vw, 15px); color: #9fb0cc; max-width: 520px; }
+
+  /* Camera stage: rounded card */
+  #cameraOverlay.face-capture-mode .camera-preview-stage {
+    margin: 16px 0 0; border-radius: 24px;
+    border: 1px solid rgba(255,255,255,.12);
+    box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  }
+
+  /* Oval guide: dashed while searching, solid when found */
+  #cameraOverlay.face-capture-mode .face-oval {
+    border: 3px dashed rgba(255,255,255,.75);
+    box-shadow: 0 0 0 9999px rgba(2,6,14,.55);
+  }
+  #cameraOverlay.face-capture-mode .face-oval.out {
+    border: 3px solid #ef4444;
+    box-shadow: 0 0 0 9999px rgba(2,6,14,.55), 0 0 22px rgba(239,68,68,.45);
+  }
+  #cameraOverlay.face-capture-mode .face-oval.good {
+    border: 3px solid #22c55e;
+    box-shadow: 0 0 0 9999px rgba(2,6,14,.5), 0 0 26px rgba(34,197,94,.6);
+    animation: fcGlow 1.4s ease-in-out infinite;
+  }
+  @keyframes fcGlow { 50% { box-shadow: 0 0 0 9999px rgba(2,6,14,.5), 0 0 42px rgba(34,197,94,.85); } }
+  @keyframes fcDot  { 50% { opacity: .3; } }
+
+  /* Corner brackets */
+  #cameraOverlay.face-capture-mode .face-corner { width: clamp(28px, 8vw, 64px); height: clamp(28px, 8vw, 64px); opacity: .9; }
+  #cameraOverlay.face-capture-mode .face-corner:before,
+  #cameraOverlay.face-capture-mode .face-corner:after { background: #60a5fa; }
+  #cameraOverlay.face-capture-mode .face-corner:before { height: 4px; }
+  #cameraOverlay.face-capture-mode .face-corner:after  { width: 4px; }
+  #cameraOverlay.face-capture-mode .face-corner.tl { top: 4%; left: 3%; }
+  #cameraOverlay.face-capture-mode .face-corner.tr { top: 4%; right: 3%; }
+  #cameraOverlay.face-capture-mode .face-corner.bl { bottom: 4%; left: 3%; }
+  #cameraOverlay.face-capture-mode .face-corner.br { bottom: 4%; right: 3%; }
+
+  /* Status: floating pill at the bottom of the camera */
+  #cameraOverlay.face-capture-mode .face-detection-status {
+    position: absolute; z-index: 5; left: 50%; bottom: 18px; transform: translateX(-50%);
+    width: max-content; max-width: calc(100% - 32px);
+    padding: 10px 18px; border-radius: 999px;
+    background: rgba(10,14,22,.8); border: 1px solid rgba(255,255,255,.16);
+    backdrop-filter: blur(8px); color: #f5b942; font-size: 14px; font-weight: 600; text-align: center;
+  }
+  #cameraOverlay.face-capture-mode .face-detection-status::before {
+    content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+    background: currentColor; margin-right: 8px; vertical-align: middle; animation: fcDot 1.2s infinite;
+  }
+  #cameraOverlay.face-capture-mode .face-detection-status.good { color: #86efac; border-color: rgba(34,197,94,.5); }
+  #cameraOverlay.face-capture-mode .face-detection-status.bad  { color: #fca5a5; border-color: rgba(239,68,68,.5); }
+
+  /* Hint card */
+  #cameraOverlay.face-capture-mode .face-capture-bottom { padding-top: 14px; }
+  #cameraOverlay.face-capture-mode .face-hint {
+    justify-content: center; text-align: center; padding: 12px 16px;
+    background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.1);
+    border-radius: 14px; color: #b8c5dc; font-size: clamp(12px, 1.9vw, 14px);
+  }
+  #cameraOverlay.face-capture-mode .face-hint::before {
+    content: ""; flex: 0 0 18px; height: 18px;
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2360a5fa' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cline x1='12' y1='16' x2='12' y2='12'/%3E%3Cline x1='12' y1='8' x2='12.01' y2='8'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+
+  /* Review screen (after the photo is taken) */
+  #cameraOverlay.face-capture-mode #cameraReview { gap: 14px; padding-top: 14px; }
+  #cameraOverlay.face-capture-mode #capturedImgEl {
+    border-radius: 24px; background: #000;
+    border: 1px solid rgba(255,255,255,.12); box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  }
+  #cameraOverlay.face-capture-mode .modal-row { gap: 10px; margin-top: 0; }
+  #cameraOverlay.face-capture-mode .modal-row button { min-height: 52px; border-radius: 14px; font-size: 15px; }
+  #cameraOverlay.face-capture-mode .modal-row .icon-btn {
+    background: rgba(255,255,255,.08); border-color: rgba(255,255,255,.18); color: #f1f5ff;
+  }
+  #cameraOverlay.face-capture-mode .modal-row .icon-btn:hover { background: rgba(255,255,255,.16); border-color: #fff; color: #fff; }
+  #cameraOverlay.face-capture-mode .modal-row .submit-btn { background: #22a559; }
+  #cameraOverlay.face-capture-mode .modal-row .submit-btn:hover { background: #1b8a49; }
+
+  /* ═══════════ EVIDENCE CAMERA UI (native camera-app style) ═══════════ */
+  #cameraOverlay.evidence-capture-mode .modal-sheet { padding: 0; background: #000; }
+
+  /* Camera fills the whole screen, no card */
+  #cameraOverlay.evidence-capture-mode .camera-preview-stage { margin: 0; border-radius: 0; min-height: 0; }
+
+  /* Rule-of-thirds grid */
+  #cameraOverlay.evidence-capture-mode .camera-preview-stage::after {
+    content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+    background:
+      linear-gradient(to right, transparent calc(33.33% - .5px), rgba(255,255,255,.28) calc(33.33% - .5px), rgba(255,255,255,.28) calc(33.33% + .5px), transparent calc(33.33% + .5px), transparent calc(66.66% - .5px), rgba(255,255,255,.28) calc(66.66% - .5px), rgba(255,255,255,.28) calc(66.66% + .5px), transparent calc(66.66% + .5px)),
+      linear-gradient(to bottom, transparent calc(33.33% - .5px), rgba(255,255,255,.28) calc(33.33% - .5px), rgba(255,255,255,.28) calc(33.33% + .5px), transparent calc(33.33% + .5px), transparent calc(66.66% - .5px), rgba(255,255,255,.28) calc(66.66% - .5px), rgba(255,255,255,.28) calc(66.66% + .5px), transparent calc(66.66% + .5px));
+  }
+
+  /* Floating top bar: round back button + centered title */
+  #cameraOverlay.evidence-capture-mode .face-capture-topbar {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 10;
+    padding: max(14px, env(safe-area-inset-top)) 16px 28px;
+    background: linear-gradient(to bottom, rgba(0,0,0,.65), transparent);
+    pointer-events: none;
+  }
+  #cameraOverlay.evidence-capture-mode .face-capture-nav {
+    pointer-events: auto; width: 42px; height: 42px; padding: 0; justify-content: center;
+    border-radius: 50%; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.25);
+  }
+  #cameraOverlay.evidence-capture-mode .face-capture-nav span { display: none; }
+  #cameraOverlay.evidence-capture-mode .face-capture-nav svg { width: 20px; height: 20px; }
+  #cameraOverlay.evidence-capture-mode .face-capture-heading {
+    position: absolute; top: max(14px, env(safe-area-inset-top)); left: 70px; right: 70px; z-index: 11;
+    padding: 0; height: 42px; display: flex !important; align-items: center; justify-content: center; pointer-events: none;
+  }
+  #cameraOverlay.evidence-capture-mode .modal-title { font-size: 16px; font-weight: 600; margin: 0; }
+  #cameraOverlay.evidence-capture-mode .modal-sub { display: none; }
+
+  /* Bottom controls: Cancel on the left, big round shutter in the center */
+  #cameraOverlay.evidence-capture-mode #standardCameraActions {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 10; margin: 0;
+    display: grid !important; grid-template-columns: 1fr auto 1fr; align-items: center;
+    padding: 40px 20px max(22px, env(safe-area-inset-bottom));
+    background: linear-gradient(to top, rgba(0,0,0,.75), transparent);
+  }
+  #cameraOverlay.evidence-capture-mode #standardCameraActions .icon-btn {
+    grid-column: 1; justify-self: start; flex: none; min-height: 0; padding: 10px 18px;
+    border-radius: 999px; background: rgba(0,0,0,.45); border: 1px solid rgba(255,255,255,.25); color: #fff;
+  }
+  #cameraOverlay.evidence-capture-mode #standardCameraActions .submit-btn {
+    grid-column: 2; flex: none; width: 76px; height: 76px; min-height: 0; padding: 0; margin: 4px;
+    border-radius: 50%; font-size: 0; background: #fff;
+    box-shadow: inset 0 0 0 5px #000, 0 0 0 4px #fff;
+  }
+  #cameraOverlay.evidence-capture-mode #standardCameraActions .submit-btn svg { display: none; }
+  #cameraOverlay.evidence-capture-mode #standardCameraActions .submit-btn:hover { background: #fff; }
+  #cameraOverlay.evidence-capture-mode #standardCameraActions .submit-btn:active { transform: scale(.92); }
+
+  /* Review screen: full-screen photo + floating buttons */
+  #cameraOverlay.evidence-capture-mode #cameraReview { padding: 0; justify-content: stretch; }
+  #cameraOverlay.evidence-capture-mode #capturedImgEl {
+    flex: 1; height: 100%; max-height: none; object-fit: contain; background: #000; border-radius: 0;
+  }
+  #cameraOverlay.evidence-capture-mode #cameraReview .modal-row {
+    position: absolute; left: 0; right: 0; bottom: 0; z-index: 10; margin: 0; gap: 12px;
+    padding: 40px 20px max(22px, env(safe-area-inset-bottom));
+    background: linear-gradient(to top, rgba(0,0,0,.8), transparent);
+  }
+  #cameraOverlay.evidence-capture-mode #cameraReview .modal-row button { min-height: 54px; border-radius: 999px; font-size: 15px; }
+  #cameraOverlay.evidence-capture-mode #cameraReview .modal-row .icon-btn {
+    background: rgba(0,0,0,.45); border-color: rgba(255,255,255,.3); color: #fff;
+  }
+  #cameraOverlay.evidence-capture-mode #cameraReview .modal-row .submit-btn { background: #fff; color: #111; }
+  #cameraOverlay.evidence-capture-mode #cameraReview .modal-row .submit-btn:hover { background: #e9e9ee; }
 </style>
 </head>
 <body>
@@ -1339,6 +1504,23 @@ if (isset($_GET['get_student'])) {
   </div>
 </div>
 
+<!-- ── FACE CAPTURE REQUIRED MODAL ── -->
+<div class="modal-overlay modal-center" id="faceRequiredOverlay" role="alertdialog" aria-modal="true" aria-labelledby="faceRequiredTitle">
+  <div class="modal-sheet" style="border-radius:var(--radius)">
+    <div class="first-login-badge">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+    </div>
+    <p class="confirm-text">
+      <strong id="faceRequiredTitle">Face capture required</strong>
+      Please capture and confirm the student's face before submitting this report.
+    </p>
+    <div style="display:flex;gap:8px">
+      <button type="button" class="icon-btn" style="flex:1;justify-content:center" onclick="closeFaceRequired()">Close</button>
+      <button type="button" class="submit-btn" style="flex:2" onclick="captureFaceFromRequired()">Capture Face Now</button>
+    </div>
+  </div>
+</div>
+
 <!-- Face positioning only: detects whether one face fits inside the oval; does not identify the person. -->
 <script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script>
@@ -1634,8 +1816,7 @@ function clearSignature() {
 /* ── SUBMIT ── */
 function confirmSubmit() {
     if (!document.getElementById('faceCaptureData').value) {
-        alert('Student face capture is required. Please use Capture Student Face before submitting.');
-        document.getElementById('faceCaptureBtn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        showFaceRequired();
         return;
     }
     document.getElementById('signatureData').value = sigCanvas.toDataURL('image/png');
@@ -1647,9 +1828,7 @@ function closeConfirm() {
 async function doSubmit() {
     const form = document.getElementById('reportForm');
     if (!document.getElementById('faceCaptureData').value) {
-        closeConfirm();
-        alert('Student face capture is required. Please capture and confirm the student face first.');
-        document.getElementById('faceCaptureBtn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+        showFaceRequired();
         return;
     }
     const fileInput = document.getElementById('evidenceFile');
@@ -1803,6 +1982,27 @@ document.getElementById('confirmOverlay').addEventListener('click', function(e){
   sbOverlay.addEventListener('click', closeSidebar);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeSidebar(); });
 })();
+</script>
+<script>
+/* ── FACE REQUIRED MODAL ── */
+function showFaceRequired() {
+    closeConfirm();
+    document.getElementById('faceRequiredOverlay').classList.add('active');
+}
+function closeFaceRequired() {
+    document.getElementById('faceRequiredOverlay').classList.remove('active');
+    document.getElementById('faceCaptureBtn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+function captureFaceFromRequired() {
+    document.getElementById('faceRequiredOverlay').classList.remove('active');
+    showFaceConsent();
+}
+document.getElementById('faceRequiredOverlay').addEventListener('click', function (e) {
+    if (e.target === this) closeFaceRequired();
+});
+document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.getElementById('faceRequiredOverlay').classList.contains('active')) closeFaceRequired();
+});
 </script>
 </body>
 </html>
