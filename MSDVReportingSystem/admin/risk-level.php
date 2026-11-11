@@ -46,6 +46,7 @@ $filtered=array_filter($allStudents,function($s)use($search,$filterRisk){
     return $ms&&$mr;
 });
 ?>
+<?php require_once 'theme-head.php'; ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -225,6 +226,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
       <li><a href="data-backup.php"><i class="fas fa-cloud-download-alt"></i><span>Data Backup</span></a></li>
       <h3>System</h3>
       <li><a href="user-management.php"><i class="fas fa-user-cog"></i><span>User Management</span></a></li>
+         <li><a href="theme-settings.php"><i class="fas fa-palette"></i><span>Theme Settings</span></a></li>
       <li><a href="../logout.php"><i class="fas fa-sign-out-alt"></i><span>Log Out</span></a></li>
     </ul>
   </div>
