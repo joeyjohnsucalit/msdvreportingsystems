@@ -45,8 +45,9 @@ if ($role === 'student') {
 if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
     $sid         = trim($_POST['student_id'] ?? '');
     $category    = $_POST['category'] ?? '';
-    $violation   = trim($_POST['violation'] ?? '');
-    $description = trim($_POST['description'] ?? '');
+    $violation      = trim($_POST['violation'] ?? '');
+    $otherViolation = trim($_POST['other_violation'] ?? '');
+    $description    = trim($_POST['description'] ?? '');
 
     $sCheck = $pdo->prepare("SELECT * FROM students WHERE student_id=?");
     $sCheck->execute([$sid]);
@@ -60,9 +61,16 @@ if (isset($_POST['action']) && $_POST['action'] === 'submit_report') {
         $err = 'Invalid violation category.';
     } elseif ($violation === '') {
         $err = 'Please select a violation.';
+    } elseif ($violation === 'Others' && $otherViolation === '') {
+        $err = 'Please specify the violation that is not listed in the handbook.';
     } elseif (empty($_POST['face_capture_data'])) {
         $err = 'Student face capture is required before submitting this report.';
     } else {
+        // Save the reporter's specific description when "Others" is selected.
+        if ($violation === 'Others') {
+            $violation = $otherViolation;
+        }
+
         // Evidence is optional and can come from either the file picker OR the camera.
         // Images are stored in TiDB (stored_images table) so they survive redeploys.
         $evidenceBytes = null;
@@ -1166,6 +1174,21 @@ if (isset($_GET['get_student'])) {
             <option value="">Select category first</option>
           </select>
         </div>
+        <div class="field" id="otherViolationField" style="display:none;">
+          <label for="otherViolationInput">Specify Other Violation</label>
+          <input
+            type="text"
+            name="other_violation"
+            id="otherViolationInput"
+            placeholder="Enter the specific violation not listed in the handbook"
+            maxlength="255"
+            autocomplete="off"
+            disabled
+          >
+          <small style="display:block;margin-top:6px;color:var(--text-muted);font-size:12px;">
+            Use this field only if the violation is not included in the handbook.
+          </small>
+        </div>
         <div class="field">
           <label>Description</label>
           <textarea name="description" placeholder="Provide additional details about the incident…"></textarea>
@@ -1352,10 +1375,45 @@ const majorViolations = ['Academic Dishonesty','Theft','Physical Violence','Subs
     'Cyber Bullying','Hazing','Major Dishonesty','Extortion','Sexual Misconduct'];
 function loadViolations(cat) {
     const sel = document.getElementById('violationSelect');
+    const otherField = document.getElementById('otherViolationField');
+    const otherInput = document.getElementById('otherViolationInput');
+
+    // Reset the previous selection whenever the category changes.
     sel.innerHTML = '<option value="">Select violation</option>';
     (cat === 'minor' ? minorViolations : majorViolations)
-        .forEach(v => sel.innerHTML += `<option value="${v}">${v}</option>`);
+        .forEach(v => {
+            const option = document.createElement('option');
+            option.value = v;
+            option.textContent = v;
+            sel.appendChild(option);
+        });
+
+    const othersOption = document.createElement('option');
+    othersOption.value = 'Others';
+    othersOption.textContent = 'Others';
+    sel.appendChild(othersOption);
+
+    otherField.style.display = 'none';
+    otherInput.value = '';
+    otherInput.disabled = true;
+    otherInput.required = false;
 }
+
+document.getElementById('violationSelect').addEventListener('change', function () {
+    const otherField = document.getElementById('otherViolationField');
+    const otherInput = document.getElementById('otherViolationInput');
+    const isOthers = this.value === 'Others';
+
+    otherField.style.display = isOthers ? 'block' : 'none';
+    otherInput.disabled = !isOthers;
+    otherInput.required = isOthers;
+
+    if (!isOthers) {
+        otherInput.value = '';
+    } else {
+        otherInput.focus();
+    }
+});
 
 /* ── FILE INPUT ── */
 function showFileName(input) {
