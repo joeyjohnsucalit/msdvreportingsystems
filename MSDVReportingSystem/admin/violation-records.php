@@ -94,8 +94,8 @@ if($filterStatus){$where.=" AND v.status=?";$params[]=$filterStatus;}
 
 /* LEFT JOIN users so violations still show when the reporter account was deleted.
    reporter_staff_type = Teaching / Non-Teaching (users.staff_type)
-   s.profile_photo_path = photo the student uploaded in the enrollment Google Form */
-$stmt=$pdo->prepare("SELECT v.*,s.full_name,s.profile_photo_path,c.name as course_name,d.name as dept_name,
+   has_photo = student uploaded a photo in the enrollment Google Form (image is served by student-photo.php) */
+$stmt=$pdo->prepare("SELECT v.*,s.full_name,(s.profile_photo_path IS NOT NULL AND s.profile_photo_path<>'') AS has_photo,c.name as course_name,d.name as dept_name,
     COALESCE(u.full_name,'Deleted user') as reporter_name,
     COALESCE(u.role,'—') as reporter_role,
     u.staff_type as reporter_staff_type,
@@ -600,8 +600,8 @@ function renderViolation(v){
     const sig = v.signature_path
         ? `<div class="media-box"><img src="../${escHtml(v.signature_path)}" alt="Signature" style="max-height:80px;"></div>`
         : `<div class="media-box"><span class="no-media"><i class="fas fa-signature" style="margin-right:6px;"></i>No signature</span></div>`;
-    const profile = v.profile_photo_path
-        ? `<div class="media-box"><img src="../${escHtml(v.profile_photo_path)}" alt="Profile"></div>`
+    const profile = Number(v.has_photo)
+        ? `<div class="media-box"><img src="student-photo.php?sid=${encodeURIComponent(v.student_id)}" alt="Profile"></div>`
         : `<div class="media-box"><span class="no-media"><i class="fas fa-user-circle" style="margin-right:6px;"></i>No profile photo</span></div>`;
 
     // Face verification result
@@ -727,7 +727,9 @@ function setImg(id, path, emptyText){
 
 function openFaceVerify(){
     setImg('fvCapture', CUR.face_capture_path, 'No face capture');
-    setImg('fvProfile', CUR.profile_photo_path, 'No profile photo uploaded');
+    document.getElementById('fvProfile').innerHTML = Number(CUR.has_photo)
+        ? `<img src="student-photo.php?sid=${encodeURIComponent(CUR.student_id)}" alt="">`
+        : `<span class="no-media">No profile photo uploaded</span>`;
     document.getElementById('fvMatch').disabled = false;
     document.getElementById('fvNoMatch').disabled = false;
     swapModal('viewViolationModal', 'faceModal');
