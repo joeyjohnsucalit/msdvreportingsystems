@@ -345,7 +345,7 @@ $violations_list = [
 
             <li>
                 <a href="user-management.php">
-                    <i class="fas fa-user"></i>
+                    <i class="fas fa-user-cog"></i>
                     <span>User Management</span>
                 </a>
             </li>
