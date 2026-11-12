@@ -41,6 +41,10 @@ if(isset($_POST['action'])&&$_POST['action']==='delete'){
             
             $userIdToDelete = $row['user_id'] ?? $rowByUsername['id'] ?? null;
 
+            // Remember the profile photo path so the file can be removed after the DB commit
+            $pp=$pdo->prepare("SELECT profile_photo_path FROM students WHERE student_id=?");
+            $pp->execute([$sid]);$profilePhoto=$pp->fetchColumn();
+
             // Delete child records first
             $pdo->prepare("DELETE FROM disciplinary_actions WHERE student_id=?")->execute([$sid]);
             $pdo->prepare("DELETE FROM appeals WHERE student_id=?")->execute([$sid]);
@@ -54,6 +58,14 @@ if(isset($_POST['action'])&&$_POST['action']==='delete'){
             }
 
             $pdo->commit();
+
+            // Remove the profile photo file from the server (only after a successful commit)
+            if($profilePhoto){
+                $root=realpath(__DIR__.'/..');
+                $full=realpath($root.'/'.ltrim($profilePhoto,'/'));
+                if($full && strpos($full,$root.DIRECTORY_SEPARATOR)===0 && is_file($full)) @unlink($full);
+            }
+
             $_SESSION['msg']='Student and user account deleted successfully.';
         } catch(Exception $e){
             $pdo->rollBack();
@@ -71,6 +83,7 @@ if($search){$where.=" AND (s.student_id LIKE ? OR s.full_name LIKE ?)";$params[]
 if($filterCourse){$where.=" AND s.course_id=?";$params[]=$filterCourse;}
 if($filterYear){$where.=" AND s.year_level=?";$params[]=$filterYear;}
 if($filterDept){$where.=" AND s.department_id=?";$params[]=$filterDept;}
+// s.* already includes profile_photo_path
 $stmt=$pdo->prepare("SELECT s.*,c.name as course_name,d.name as dept_name,(SELECT COUNT(*) FROM violations v WHERE v.student_id=s.student_id) as total_violations FROM students s JOIN courses c ON s.course_id=c.id JOIN departments d ON s.department_id=d.id $where ORDER BY s.student_id");
 $stmt->execute($params);$students=$stmt->fetchAll();
 function getRiskLevel($t){if($t>=5)return['label'=>'Critical','class'=>'danger','color'=>'#dc2626','bg'=>'#fff0f0'];if($t>=4)return['label'=>'High','class'=>'warning','color'=>'#d97706','bg'=>'#fffbeb'];if($t>=2)return['label'=>'Moderate','class'=>'info','color'=>'#2563eb','bg'=>'#eff4ff'];return['label'=>'Low','class'=>'success','color'=>'#16a34a','bg'=>'#f0fdf4'];}
@@ -263,6 +276,11 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .info-key { font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-3); margin-bottom:3px; }
 .info-val { font-size:13.5px; color:var(--text); font-weight:500; }
 .info-val.sid-val { font-family:monospace; color:var(--accent); letter-spacing:0.5px; }
+
+/* Profile photo block in the student modal */
+.profile-photo-box { display:flex; align-items:center; gap:14px; margin-bottom:16px; }
+.profile-photo-box img { width:96px; height:96px; object-fit:cover; border-radius:var(--r-md); border:1px solid var(--border); }
+.profile-photo-box .no-photo { width:96px; height:96px; border-radius:var(--r-md); border:1px dashed var(--border); background:var(--bg); display:flex; align-items:center; justify-content:center; color:var(--text-3); font-size:11px; text-align:center; padding:6px; }
 
 /* View modal section label */
 .sec-lbl { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-3); margin-bottom:10px; }
@@ -552,7 +570,18 @@ function viewStudent(st){
                       <td style="color:var(--text-3);">${v.sanction||'—'}</td>
                     </tr>`).join('');
 
+            const photo = st.profile_photo_path
+                ? `<div class="profile-photo-box">
+                     <img src="../${escHtml(st.profile_photo_path)}" alt="Profile photo">
+                     <div><div class="info-key">Profile Photo</div>
+                     <div style="font-size:12px;color:var(--text-3);">Uploaded during enrollment</div></div>
+                   </div>`
+                : `<div class="profile-photo-box">
+                     <div class="no-photo">No profile photo</div>
+                   </div>`;
+
             document.getElementById('viewModalBody').innerHTML = `
+                ${photo}
                 <div class="info-grid">
                   <div class="info-cell">
                     <div class="info-key">Student ID</div>
