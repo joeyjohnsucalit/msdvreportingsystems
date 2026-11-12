@@ -44,27 +44,17 @@ $lastFive = substr(str_replace('-', '', $sid), -5);
 $hashed   = password_hash($lastFive, PASSWORD_DEFAULT);
 
 /* ── Profile photo (base64 sent by the Google Form script) ──
-   Saved only if it is a real JPG/PNG/WEBP image of 5 MB or less.
+   Stored INSIDE the students table (profile_photo_path) as a data URI, so it
+   survives Render restarts. Accepts only real JPG/PNG/WEBP images up to 3 MB.
    If the photo is missing or invalid, the student is still enrolled without one. */
-$photoPath = null;
-$photoFull = null;
+$photoData = null;
 $b64 = (string)($in['profile_photo'] ?? '');
 if ($b64 !== '') {
     $bin  = base64_decode($b64, true);
     $info = $bin ? @getimagesizefromstring($bin) : false;
-    $exts = ['image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp'];
-
-    if ($info && isset($exts[$info['mime']]) && strlen($bin) <= 5 * 1024 * 1024) {
-        $dir = __DIR__ . '/../uploads/profiles/';
-        if (!is_dir($dir)) @mkdir($dir, 0755, true);
-
-        $file      = $sid . '.' . $exts[$info['mime']];   // e.g. 123-45678.jpg
-        $photoFull = $dir . $file;
-        if (@file_put_contents($photoFull, $bin) !== false) {
-            $photoPath = 'uploads/profiles/' . $file;
-        } else {
-            $photoFull = null;
-        }
+    $okMime = ['image/jpeg', 'image/png', 'image/webp'];
+    if ($info && in_array($info['mime'], $okMime, true) && strlen($bin) <= 3 * 1024 * 1024) {
+        $photoData = 'data:' . $info['mime'] . ';base64,' . base64_encode($bin);
     }
 }
 
@@ -74,12 +64,11 @@ try {
         ->execute([$fname, $sid, $hashed]);
     $uid = $pdo->lastInsertId();
     $pdo->prepare("INSERT INTO students (student_id,full_name,course_id,year_level,department_id,user_id,profile_photo_path) VALUES (?,?,?,?,?,?,?)")
-        ->execute([$sid, $fname, $course['id'], $year, $course['department_id'], $uid, $photoPath]);
+        ->execute([$sid, $fname, $course['id'], $year, $course['department_id'], $uid, $photoData]);
     $pdo->commit();
     out(200, true, 'Student enrolled');
 } catch (Exception $e) {
     $pdo->rollBack();
-    if ($photoFull && is_file($photoFull)) @unlink($photoFull);   // don't leave an orphan photo
     error_log('Enroll webhook error: ' . $e->getMessage());
     out(500, false, 'Server error');
 }
