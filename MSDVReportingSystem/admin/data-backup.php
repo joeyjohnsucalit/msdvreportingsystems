@@ -819,7 +819,6 @@ $previewRisk = $pdo->query("
                 <input type="checkbox" class="bk-cb" id="selectAll">
                 Select all tables
             </label>
-            <span class="bk-toolbar-hint">Tick tables to export them together in one Excel file.</span>
         </div>
 
 
