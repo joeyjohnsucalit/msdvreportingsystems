@@ -35,6 +35,60 @@ if(isset($_POST['action'])&&$_POST['action']==='delete_violation'){
     header('Location: violation-records.php');exit;
 }
 
+/* ───────────────────────────────────────────────
+   FACE VERIFICATION + EVIDENCE HANDLERS
+   ─────────────────────────────────────────────── */
+
+// Resolve a stored relative path to a real file, only if it sits inside the project root.
+function safeFile($rel){
+    if(!$rel) return null;
+    $root = realpath(__DIR__.'/..');
+    $full = realpath($root.'/'.ltrim($rel,'/'));
+    return ($full && strpos($full,$root.DIRECTORY_SEPARATOR)===0 && is_file($full)) ? $full : null;
+}
+
+// Save face verification result (match / no_match)
+if(($_POST['action']??'')==='face_result'){
+    header('Content-Type: application/json');
+    $vid = (int)$_POST['violation_id'];
+    $result = ($_POST['result']??'')==='match' ? 'match' : 'no_match';
+    $q = $pdo->prepare("SELECT face_capture_path FROM violations WHERE id=?");
+    $q->execute([$vid]); $row = $q->fetch();
+    if(!$row){ echo json_encode(['ok'=>false,'error'=>'Violation not found']); exit; }
+    if($result==='match'){
+        $pdo->prepare("UPDATE violations SET face_match='match', face_verified_at=NOW() WHERE id=?")->execute([$vid]);
+    } else {
+        // Not a match: delete the captured face image and clear its path
+        if($f = safeFile($row['face_capture_path'])) @unlink($f);
+        $pdo->prepare("UPDATE violations SET face_match='no_match', face_capture_path=NULL, face_verified_at=NOW() WHERE id=?")->execute([$vid]);
+    }
+    echo json_encode(['ok'=>true]); exit;
+}
+
+// Stream the evidence file so the browser can download it
+if(isset($_GET['download_evidence'])){
+    $q = $pdo->prepare("SELECT evidence_path FROM violations WHERE id=?");
+    $q->execute([(int)$_GET['download_evidence']]); $row = $q->fetch();
+    $f = $row ? safeFile($row['evidence_path']) : null;
+    if(!$f){ http_response_code(404); exit; }
+    header('Content-Type: '.(mime_content_type($f) ?: 'application/octet-stream'));
+    header('Content-Length: '.filesize($f));
+    readfile($f); exit;
+}
+
+// Delete the evidence file from the server (after download, or after the admin skips)
+if(($_POST['action']??'')==='clear_evidence'){
+    header('Content-Type: application/json');
+    $vid = (int)$_POST['violation_id'];
+    $q = $pdo->prepare("SELECT evidence_path FROM violations WHERE id=?");
+    $q->execute([$vid]); $row = $q->fetch();
+    if($row){
+        if($f = safeFile($row['evidence_path'])) @unlink($f);
+        $pdo->prepare("UPDATE violations SET evidence_path=NULL WHERE id=?")->execute([$vid]);
+    }
+    echo json_encode(['ok'=>true]); exit;
+}
+
 $search=trim($_GET['search']??'');$filterCat=$_GET['category']??'';$filterStatus=$_GET['status']??'';
 $where="WHERE 1=1";$params=[];
 if($search){$where.=" AND (s.full_name LIKE ? OR v.student_id LIKE ?)";$params[]="%$search%";$params[]="%$search%";}
@@ -42,8 +96,9 @@ if($filterCat){$where.=" AND v.category=?";$params[]=$filterCat;}
 if($filterStatus){$where.=" AND v.status=?";$params[]=$filterStatus;}
 
 /* LEFT JOIN users so violations still show when the reporter account was deleted.
-   reporter_staff_type = Teaching / Non-Teaching (users.staff_type) */
-$stmt=$pdo->prepare("SELECT v.*,s.full_name,c.name as course_name,d.name as dept_name,
+   reporter_staff_type = Teaching / Non-Teaching (users.staff_type)
+   s.profile_photo_path = photo the student uploaded in the enrollment Google Form */
+$stmt=$pdo->prepare("SELECT v.*,s.full_name,s.profile_photo_path,c.name as course_name,d.name as dept_name,
     COALESCE(u.full_name,'Deleted user') as reporter_name,
     COALESCE(u.role,'—') as reporter_role,
     u.staff_type as reporter_staff_type,
@@ -222,6 +277,8 @@ tr.violation-highlight > td:last-child {
 .mini-badge.pending   { background:#f4f5f7; color:#6b7280; }
 .mini-badge.teaching     { background:#eff4ff; color:#2563eb; }
 .mini-badge.non_teaching { background:#f5f3ff; color:#7c3aed; }
+.mini-badge.match     { background:#f0fdf4; color:#16a34a; }
+.mini-badge.no_match  { background:#fff0f0; color:#dc2626; }
 
 /* Action btn */
 .view-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:var(--r-sm); font-size:12px; font-weight:500; border:1px solid var(--border); background:#fff; color:var(--text-2); cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; transition:all 0.15s; }
@@ -251,6 +308,11 @@ tr.violation-highlight > td:last-child {
 .m-btn.ghost:hover { background:var(--bg); }
 .m-btn.danger { background:#dc2626; color:#fff; border-color:#dc2626; }
 .m-btn.danger:hover { background:#b91c1c; }
+.m-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
+.m-btn.primary:hover { background:#1d4ed8; }
+.m-btn.success { background:#16a34a; color:#fff; border-color:#16a34a; }
+.m-btn.success:hover { background:#15803d; }
+.m-btn:disabled { opacity:0.6; cursor:not-allowed; }
 
 /* View modal info grid */
 .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; margin-bottom:20px; }
@@ -265,8 +327,13 @@ tr.violation-highlight > td:last-child {
 
 /* Evidence / image areas */
 .media-box { border:1px solid var(--border); border-radius:var(--r-md); padding:12px; background:var(--bg); min-height:80px; display:flex; align-items:center; justify-content:center; }
-.media-box img { max-height:180px; border-radius:var(--r-sm); object-fit:contain; }
+.media-box img { max-height:180px; max-width:100%; border-radius:var(--r-sm); object-fit:contain; }
 .media-box .no-media { font-size:12px; color:var(--text-3); }
+
+/* Face verification side-by-side */
+.face-compare { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.face-compare .media-box { min-height:240px; }
+.face-compare .media-box img { max-height:240px; }
 </style>
 </head>
 <body>
@@ -413,7 +480,7 @@ tr.violation-highlight > td:last-child {
 
 <!-- ── VIEW VIOLATION MODAL ── -->
 <div class="modal fade" id="viewViolationModal" tabindex="-1">
-  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
         <span class="modal-title">Violation Details</span>
@@ -423,6 +490,7 @@ tr.violation-highlight > td:last-child {
         <div style="text-align:center;padding:30px;color:var(--text-3);">Loading…</div>
       </div>
       <div class="modal-footer">
+        <button class="m-btn primary" id="vvVerifyBtn" style="display:none"><i class="fas fa-user-check" style="font-size:11px;"></i> Verify Face</button>
         <button class="m-btn danger" id="vvDeleteBtn"><i class="fas fa-trash" style="font-size:11px;"></i> Delete</button>
         <button type="button" class="m-btn ghost" data-bs-dismiss="modal">Close</button>
       </div>
@@ -455,6 +523,63 @@ tr.violation-highlight > td:last-child {
   </div>
 </div>
 
+<!-- ── FACE VERIFY MODAL ── -->
+<div class="modal fade" id="faceModal" data-bs-backdrop="static" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <span class="modal-title">Verify Face</span>
+        <button type="button" class="btn-close" onclick="backToView('faceModal')"></button>
+      </div>
+      <div class="modal-body">
+        <div class="face-compare">
+          <div><div class="sec-lbl">Face Capture (Violation)</div><div class="media-box" id="fvCapture"></div></div>
+          <div><div class="sec-lbl">Profile Photo (Enrollment)</div><div class="media-box" id="fvProfile"></div></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="m-btn danger"  id="fvNoMatch" onclick="submitFace('no_match')"><i class="fas fa-times" style="font-size:11px;"></i> Not Match</button>
+        <button class="m-btn success" id="fvMatch"   onclick="submitFace('match')"><i class="fas fa-check" style="font-size:11px;"></i> Match</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── DOWNLOAD EVIDENCE MODAL ── -->
+<div class="modal fade" id="evidenceModal" data-bs-backdrop="static" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header"><span class="modal-title">Download Evidence</span></div>
+      <div class="modal-body">
+        <p style="font-size:13.5px;color:var(--text-2);line-height:1.6;margin-bottom:10px;">
+          Download the evidence to free up server storage. It will be saved as:</p>
+        <div class="f-input" id="evFileName" style="font-family:monospace;background:var(--bg);"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="m-btn ghost" onclick="swapModal('evidenceModal','skipConfirmModal')">No</button>
+        <button class="m-btn primary" id="evDownloadBtn" onclick="downloadEvidence()"><i class="fas fa-download" style="font-size:11px;"></i> Download Evidence</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── CONFIRM SKIP DOWNLOAD MODAL ── -->
+<div class="modal fade" id="skipConfirmModal" data-bs-backdrop="static" tabindex="-1">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header danger-head"><span class="modal-title">Are you sure?</span></div>
+      <div class="modal-body">
+        <p style="font-size:13.5px;color:var(--text-2);line-height:1.6;margin:0;">
+          Are you sure you don't want to download the evidence? It will be permanently removed from the server.</p>
+      </div>
+      <div class="modal-footer">
+        <button class="m-btn ghost"  onclick="swapModal('skipConfirmModal','evidenceModal')">No, go back</button>
+        <button class="m-btn danger" onclick="skipEvidence()">Yes, don't download</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 <?php if($highlight): ?>
@@ -467,7 +592,8 @@ document.addEventListener('DOMContentLoaded',function(){
 const ROLE_LABELS       = { teacher:'Instructor', csu:'CSU', jassu:'JASSU', nurse:'Nurse' };
 const STAFF_TYPE_LABELS = { teaching:'Teaching', non_teaching:'Non-Teaching' };
 
-function openViolationView(v){
+/* Renders the violation details into the View modal (does not show the modal) */
+function renderViolation(v){
     const evidence = v.evidence_path
         ? `<div class="media-box"><img src="../${escHtml(v.evidence_path)}" alt="Evidence"></div>`
         : `<div class="media-box"><span class="no-media"><i class="fas fa-image" style="margin-right:6px;"></i>No evidence uploaded</span></div>`;
@@ -477,6 +603,16 @@ function openViolationView(v){
     const sig = v.signature_path
         ? `<div class="media-box"><img src="../${escHtml(v.signature_path)}" alt="Signature" style="max-height:80px;"></div>`
         : `<div class="media-box"><span class="no-media"><i class="fas fa-signature" style="margin-right:6px;"></i>No signature</span></div>`;
+    const profile = v.profile_photo_path
+        ? `<div class="media-box"><img src="../${escHtml(v.profile_photo_path)}" alt="Profile"></div>`
+        : `<div class="media-box"><span class="no-media"><i class="fas fa-user-circle" style="margin-right:6px;"></i>No profile photo</span></div>`;
+
+    // Face verification result
+    const faceBadge = v.face_match==='match'
+        ? '<span class="mini-badge match">Face matched</span>'
+        : v.face_match==='no_match'
+        ? '<span class="mini-badge no_match">Face did not match</span>'
+        : '<span class="mini-badge pending">Not verified</span>';
 
     // Reporter info
     const roleLabel = ROLE_LABELS[v.reporter_role] || v.reporter_role || '—';
@@ -530,9 +666,13 @@ function openViolationView(v){
             <div class="info-key">Reporter Role</div>
             <div class="info-val">${escHtml(roleLabel)}</div>
           </div>
+          <div class="info-cell" style="grid-column:span 3;">
+            <div class="info-key">Face Verification</div>
+            <div class="info-val">${faceBadge}</div>
+          </div>
         </div>
         <div class="sec-lbl">Attachments</div>
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
           <div>
             <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Evidence</div>
             ${evidence}
@@ -545,14 +685,116 @@ function openViolationView(v){
             <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">E-Signature</div>
             ${sig}
           </div>
+          <div>
+            <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Profile Photo</div>
+            ${profile}
+          </div>
         </div>`;
 
-    document.getElementById('vvDeleteBtn').onclick = function(){
-        bootstrap.Modal.getInstance(document.getElementById('viewViolationModal'))?.hide();
-        document.getElementById('delViolID').value = v.id;
-        setTimeout(()=>new bootstrap.Modal(document.getElementById('delViolModal')).show(), 450);
-    };
-    new bootstrap.Modal(document.getElementById('viewViolationModal')).show();
+    document.getElementById('vvDeleteBtn').onclick = () =>
+        swapModal('viewViolationModal','delViolModal',()=>{ document.getElementById('delViolID').value = v.id; });
+
+    // Show "Verify Face" only if not verified yet and a face capture still exists
+    const vb = document.getElementById('vvVerifyBtn');
+    vb.style.display = (!v.face_match && v.face_capture_path) ? '' : 'none';
+    vb.onclick = openFaceVerify;
+}
+
+/* ── Face verification + evidence flow ── */
+const STATE = {};   // keeps updated violation data so re-opening View isn't stale
+let CUR = null;
+
+function openViolationView(v){
+    if(STATE[v.id]) v = STATE[v.id]; else STATE[v.id] = v;
+    CUR = v;
+    renderViolation(v);
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('viewViolationModal')).show();
+}
+
+// Hide one modal, then show another (waits for the hide animation)
+function swapModal(fromId, toId, cb){
+    const from = document.getElementById(fromId), to = document.getElementById(toId);
+    const inst = bootstrap.Modal.getInstance(from);
+    const go = () => { cb && cb(); bootstrap.Modal.getOrCreateInstance(to).show(); };
+    if(!inst || !from.classList.contains('show')) return go();
+    from.addEventListener('hidden.bs.modal', go, {once:true});
+    inst.hide();
+}
+function backToView(fromId){ swapModal(fromId, 'viewViolationModal', ()=>renderViolation(CUR)); }
+
+function setImg(id, path, emptyText){
+    document.getElementById(id).innerHTML = path
+        ? `<img src="../${escHtml(path)}" alt="">`
+        : `<span class="no-media">${emptyText}</span>`;
+}
+
+function openFaceVerify(){
+    setImg('fvCapture', CUR.face_capture_path, 'No face capture');
+    setImg('fvProfile', CUR.profile_photo_path, 'No profile photo uploaded');
+    document.getElementById('fvMatch').disabled = false;
+    document.getElementById('fvNoMatch').disabled = false;
+    swapModal('viewViolationModal', 'faceModal');
+}
+
+async function postAction(data){
+    const fd = new FormData();
+    Object.entries(data).forEach(([k,val]) => fd.append(k,val));
+    const r = await fetch('violation-records.php', {method:'POST', body:fd});
+    return r.json();
+}
+
+async function submitFace(result){
+    document.getElementById('fvMatch').disabled = true;
+    document.getElementById('fvNoMatch').disabled = true;
+    try{
+        const d = await postAction({action:'face_result', violation_id:CUR.id, result});
+        if(!d.ok) throw new Error(d.error || 'Failed to save');
+        CUR.face_match = result;
+        if(result==='no_match') CUR.face_capture_path = null;   // file was deleted server-side
+        if(CUR.evidence_path){
+            document.getElementById('evFileName').textContent = evidenceFileName(CUR);
+            swapModal('faceModal', 'evidenceModal');
+        } else {
+            backToView('faceModal');
+        }
+    }catch(err){
+        alert(err.message);
+        document.getElementById('fvMatch').disabled = false;
+        document.getElementById('fvNoMatch').disabled = false;
+    }
+}
+
+// StudentID_ViolationName.ext
+function evidenceFileName(v){
+    const ext  = (v.evidence_path.split('.').pop() || 'jpg').toLowerCase();
+    const slug = String(v.violation).replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'');
+    return `${v.student_id}_${slug}.${ext}`;
+}
+
+async function downloadEvidence(){
+    const btn = document.getElementById('evDownloadBtn'); btn.disabled = true;
+    try{
+        const r = await fetch('violation-records.php?download_evidence=' + CUR.id);
+        if(!r.ok) throw new Error('Evidence file not found on the server.');
+        const blob = await r.blob();
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = evidenceFileName(CUR);
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(()=>URL.revokeObjectURL(a.href), 3000);
+        await clearEvidence();            // only runs after the download succeeded
+        backToView('evidenceModal');
+    }catch(err){ alert(err.message); }
+    btn.disabled = false;
+}
+
+async function clearEvidence(){
+    await postAction({action:'clear_evidence', violation_id:CUR.id});
+    CUR.evidence_path = null;
+}
+async function skipEvidence(){
+    await clearEvidence();
+    backToView('skipConfirmModal');
 }
 
 /* ── NOTIFICATIONS ── */
