@@ -47,7 +47,7 @@ function safeFile($rel){
     return ($full && strpos($full,$root.DIRECTORY_SEPARATOR)===0 && is_file($full)) ? $full : null;
 }
 
-// Save face verification result (match / no_match)
+// Save face verification result (match / no_match) and delete the face capture file
 if(($_POST['action']??'')==='face_result'){
     header('Content-Type: application/json');
     $vid = (int)$_POST['violation_id'];
@@ -55,13 +55,10 @@ if(($_POST['action']??'')==='face_result'){
     $q = $pdo->prepare("SELECT face_capture_path FROM violations WHERE id=?");
     $q->execute([$vid]); $row = $q->fetch();
     if(!$row){ echo json_encode(['ok'=>false,'error'=>'Violation not found']); exit; }
-    if($result==='match'){
-        $pdo->prepare("UPDATE violations SET face_match='match', face_verified_at=NOW() WHERE id=?")->execute([$vid]);
-    } else {
-        // Not a match: delete the captured face image and clear its path
-        if($f = safeFile($row['face_capture_path'])) @unlink($f);
-        $pdo->prepare("UPDATE violations SET face_match='no_match', face_capture_path=NULL, face_verified_at=NOW() WHERE id=?")->execute([$vid]);
-    }
+    // Match OR not match: the captured face image is always deleted to save storage.
+    // The result (match / no_match) stays saved so the admin can still see it.
+    if($f = safeFile($row['face_capture_path'])) @unlink($f);
+    $pdo->prepare("UPDATE violations SET face_match=?, face_capture_path=NULL, face_verified_at=NOW() WHERE id=?")->execute([$result,$vid]);
     echo json_encode(['ok'=>true]); exit;
 }
 
@@ -750,7 +747,7 @@ async function submitFace(result){
         const d = await postAction({action:'face_result', violation_id:CUR.id, result});
         if(!d.ok) throw new Error(d.error || 'Failed to save');
         CUR.face_match = result;
-        if(result==='no_match') CUR.face_capture_path = null;   // file was deleted server-side
+        CUR.face_capture_path = null;   // file is deleted server-side for both match and not match
         if(CUR.evidence_path){
             document.getElementById('evFileName').textContent = evidenceFileName(CUR);
             swapModal('faceModal', 'evidenceModal');
