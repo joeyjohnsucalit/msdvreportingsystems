@@ -41,10 +41,6 @@ if(isset($_POST['action'])&&$_POST['action']==='delete'){
             
             $userIdToDelete = $row['user_id'] ?? $rowByUsername['id'] ?? null;
 
-            // Remember the profile photo path so the file can be removed after the DB commit
-            $pp=$pdo->prepare("SELECT profile_photo_path FROM students WHERE student_id=?");
-            $pp->execute([$sid]);$profilePhoto=$pp->fetchColumn();
-
             // Delete child records first
             $pdo->prepare("DELETE FROM disciplinary_actions WHERE student_id=?")->execute([$sid]);
             $pdo->prepare("DELETE FROM appeals WHERE student_id=?")->execute([$sid]);
@@ -58,13 +54,6 @@ if(isset($_POST['action'])&&$_POST['action']==='delete'){
             }
 
             $pdo->commit();
-
-            // Remove the profile photo file from the server (only after a successful commit)
-            if($profilePhoto){
-                $root=realpath(__DIR__.'/..');
-                $full=realpath($root.'/'.ltrim($profilePhoto,'/'));
-                if($full && strpos($full,$root.DIRECTORY_SEPARATOR)===0 && is_file($full)) @unlink($full);
-            }
 
             $_SESSION['msg']='Student and user account deleted successfully.';
         } catch(Exception $e){
@@ -83,8 +72,9 @@ if($search){$where.=" AND (s.student_id LIKE ? OR s.full_name LIKE ?)";$params[]
 if($filterCourse){$where.=" AND s.course_id=?";$params[]=$filterCourse;}
 if($filterYear){$where.=" AND s.year_level=?";$params[]=$filterYear;}
 if($filterDept){$where.=" AND s.department_id=?";$params[]=$filterDept;}
-// s.* already includes profile_photo_path
-$stmt=$pdo->prepare("SELECT s.*,c.name as course_name,d.name as dept_name,(SELECT COUNT(*) FROM violations v WHERE v.student_id=s.student_id) as total_violations FROM students s JOIN courses c ON s.course_id=c.id JOIN departments d ON s.department_id=d.id $where ORDER BY s.student_id");
+// The photo itself is NOT selected here (it is large). has_photo tells the page if one exists;
+// the image is loaded on demand from student-photo.php.
+$stmt=$pdo->prepare("SELECT s.student_id,s.full_name,s.course_id,s.year_level,s.department_id,s.user_id,(s.profile_photo_path IS NOT NULL AND s.profile_photo_path<>'') AS has_photo,c.name as course_name,d.name as dept_name,(SELECT COUNT(*) FROM violations v WHERE v.student_id=s.student_id) as total_violations FROM students s JOIN courses c ON s.course_id=c.id JOIN departments d ON s.department_id=d.id $where ORDER BY s.student_id");
 $stmt->execute($params);$students=$stmt->fetchAll();
 function getRiskLevel($t){if($t>=5)return['label'=>'Critical','class'=>'danger','color'=>'#dc2626','bg'=>'#fff0f0'];if($t>=4)return['label'=>'High','class'=>'warning','color'=>'#d97706','bg'=>'#fffbeb'];if($t>=2)return['label'=>'Moderate','class'=>'info','color'=>'#2563eb','bg'=>'#eff4ff'];return['label'=>'Low','class'=>'success','color'=>'#16a34a','bg'=>'#f0fdf4'];}
 ?>
@@ -324,11 +314,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
       <li><a href="data-backup.php"><i class="fas fa-cloud-download-alt"></i><span>Data Backup</span></a></li>
       <h3>System</h3>
       <li><a href="user-management.php"><i class="fas fa-user-cog"></i><span>User Management</span></a></li>
-      <li>
-                <a href="theme-settings.php">
-                    <i class="fas fa-palette"></i>
-                    <span>Theme Settings</span></a>
-                </li>
+      
       <li><a href="../logout.php"><i class="fas fa-sign-out-alt"></i><span>Log Out</span></a></li>
     </ul>
   </div>
@@ -574,9 +560,9 @@ function viewStudent(st){
                       <td style="color:var(--text-3);">${v.sanction||'—'}</td>
                     </tr>`).join('');
 
-            const photo = st.profile_photo_path
+            const photo = Number(st.has_photo)
                 ? `<div class="profile-photo-box">
-                     <img src="../${escHtml(st.profile_photo_path)}" alt="Profile photo">
+                     <img src="student-photo.php?sid=${encodeURIComponent(st.student_id)}" alt="Profile photo">
                      <div><div class="info-key">Profile Photo</div>
                      <div style="font-size:12px;color:var(--text-3);">Uploaded during enrollment</div></div>
                    </div>`
