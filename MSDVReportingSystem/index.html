@@ -12,6 +12,7 @@
 
 <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="manifest" href="manifest.json">
+
 <script>
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('service-worker.js');
@@ -294,7 +295,6 @@ section.about {
     font-weight: 700;
     color: var(--gold);
     letter-spacing: .08em;
-    
 }
 
 .about h3 {
@@ -815,7 +815,7 @@ footer {
     }
 }
 
-/* INSTALL APP SLIDE-UP MODAL */
+/* INSTALL APP MODAL */
 .install-overlay {
     position: fixed;
     inset: 0;
@@ -825,77 +825,91 @@ footer {
     visibility: hidden;
     transition: opacity .28s ease, visibility .28s ease;
 }
-.install-overlay.show {
-    opacity: 1;
-    visibility: visible;
-}
+.install-overlay.show { opacity: 1; visibility: visible; }
+
 .install-modal {
     position: fixed;
     left: 50%;
     bottom: 0;
     z-index: 9999;
-    width: min(100%, 520px);
-    padding: 12px 24px calc(24px + env(safe-area-inset-bottom));
+    width: min(100%, 480px);
+    max-height: 90svh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding: 0 22px calc(22px + env(safe-area-inset-bottom));
     background: #fff;
     color: var(--ink);
+    border-top: 4px solid var(--red);
     border-radius: 24px 24px 0 0;
-    box-shadow: 0 -12px 45px rgba(0, 0, 0, .22);
+    box-shadow: 0 -12px 45px rgba(0, 0, 0, .25);
     transform: translate(-50%, 110%);
     visibility: hidden;
     transition: transform .42s cubic-bezier(.2,.8,.2,1), visibility .42s ease;
 }
-.install-modal.show {
-    transform: translate(-50%, 0);
-    visibility: visible;
+.install-modal.show { transform: translate(-50%, 0); visibility: visible; }
+
+/* Desktop: centered dialog instead of a bottom sheet */
+@media (min-width: 640px) {
+    .install-modal {
+        bottom: auto;
+        top: 50%;
+        border-radius: 20px;
+        padding-top: 8px;
+        opacity: 0;
+        transform: translate(-50%, -46%) scale(.97);
+        transition: transform .3s ease, opacity .3s ease, visibility .3s ease;
+    }
+    .install-modal.show { opacity: 1; transform: translate(-50%, -50%); }
+    .install-handle { display: none; }
 }
+
 .install-handle {
     width: 42px;
     height: 5px;
     border-radius: 99px;
     background: #d8deeb;
-    margin: 0 auto 18px;
+    margin: 10px auto 0;
 }
+.install-close {
+    position: sticky;
+    top: 8px;
+    z-index: 2;
+    display: grid;
+    place-items: center;
+    width: 34px;
+    height: 34px;
+    margin: 8px 0 -34px auto;
+    border: 0;
+    border-radius: 50%;
+    background: #eef1f8;
+    color: var(--navy);
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+}
+.install-close:hover { background: #e0e5f1; }
+
 .install-modal-top {
     display: flex;
     align-items: center;
     gap: 14px;
-    margin-bottom: 14px;
+    padding: 22px 40px 0 0;
 }
 .install-app-icon {
-    width: 64px;
-    height: 64px;
-    flex: 0 0 64px;
+    width: 60px;
+    height: 60px;
+    flex: none;
     overflow: hidden;
-    border-radius: 16px;
+    border-radius: 15px;
     border: 2px solid #e4eaf7;
     background: var(--navy);
 }
-.install-app-icon img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-}
-.install-modal h3 {
-    font-size: 22px;
-    line-height: 1.2;
-    color: var(--navy);
-    margin-bottom: 4px;
-}
-.install-modal .install-subtitle {
-    color: var(--mute);
-    font-size: 13px;
-}
-.install-description {
-    color: #4c5873;
-    font-size: 14px;
-    line-height: 1.55;
-    margin: 12px 0 18px;
-}
-.install-actions {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-}
+.install-app-icon img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.install-modal h3 { font-size: 21px; line-height: 1.2; color: var(--navy); }
+.install-subtitle { margin-top: 2px; color: var(--mute); font-size: 13px; line-height: 1.3; }
+.install-description { color: #4c5873; font-size: 14px; line-height: 1.55; margin: 16px 0 18px; }
+
+.install-actions { display: grid; grid-template-columns: 1.5fr 1fr; gap: 10px; }
 .install-actions button {
     min-height: 48px;
     padding: 11px 14px;
@@ -903,51 +917,133 @@ footer {
     border: 1px solid var(--line);
     font: 600 15px 'Oswald', sans-serif;
     cursor: pointer;
+    transition: background .15s, transform .15s;
 }
-.install-now {
-    background: var(--red);
-    color: #fff;
-    border-color: var(--red) !important;
+.install-actions button:active { transform: scale(.97); }
+.install-now { background: var(--red); color: #fff; border-color: var(--red) !important; }
+.install-now:hover { background: #c92f33; }
+.install-later { background: #fff; color: var(--navy); }
+.install-later:hover { background: #f2f5fb; }
+
+.install-how {
+    display: block;
+    width: 100%;
+    margin-top: 10px;
+    padding: 10px;
+    background: none;
+    border: 0;
+    color: var(--blue);
+    font: 600 14px 'Oswald', sans-serif;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
 }
-.install-now:hover {
-    background: #c92f33;
+
+/* INSTALL TUTORIAL: one step at a time, swipe sideways */
+.install-guide { margin-top: 6px; }
+.install-guide[hidden] { display: none; }
+.guide-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    padding: 4px;
+    background: #eef1f8;
+    border-radius: 12px;
+    margin-bottom: 12px;
 }
-.install-later {
+.guide-tab {
+    padding: 9px 4px;
+    border-radius: 9px;
+    border: 0;
+    background: transparent;
+    color: var(--mute);
+    font: 600 14px 'Oswald', sans-serif;
+    cursor: pointer;
+}
+.guide-tab[aria-selected="true"] {
     background: #fff;
     color: var(--navy);
+    box-shadow: 0 1px 4px rgba(10, 29, 77, .15);
 }
-.install-help {
-    display: none;
-    margin-top: 14px;
-    padding: 12px;
-    border-radius: 10px;
-    background: #f2f5fb;
-    color: #4c5873;
+.guide-note {
     font-size: 13px;
     line-height: 1.5;
+    color: #4c5873;
+    background: #f2f5fb;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 12px;
 }
-.install-help.show {
-    display: block;
+.guide-note.warn { background: #fff7e6; color: #7a4300; }
+
+.guide-list {
+    list-style: none;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 100%;
+    gap: 12px;
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    overscroll-behavior-x: contain;
 }
+.guide-step {
+    scroll-snap-align: center;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    overflow: hidden;
+    background: #fff;
+}
+.guide-art { background: #e9edf6; padding: 10px; }
+.guide-art svg { display: block; width: 100%; height: auto; }
+.guide-txt { padding: 12px 14px 14px; text-align: left; }
+.guide-txt b {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--navy);
+}
+.guide-txt b span {
+    flex: none;
+    width: 24px;
+    height: 24px;
+    border-radius: 7px;
+    background: var(--navy);
+    color: #fff;
+    font-size: 12px;
+    display: grid;
+    place-items: center;
+}
+.guide-txt p { margin-top: 6px; font-size: 13.5px; line-height: 1.5; color: #4c5873; }
+
+.guide-dots { display: flex; justify-content: center; gap: 6px; margin-top: 12px; }
+.guide-dots i {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #cfd7e8;
+    transition: width .2s, background .2s;
+}
+.guide-dots i.on { width: 20px; border-radius: 99px; background: var(--red); }
+
 @media (max-width: 420px) {
-    .install-modal { padding-left: 18px; padding-right: 18px; }
-    .install-modal h3 { font-size: 20px; }
+    .install-modal { padding-left: 16px; padding-right: 16px; }
+    .install-modal h3 { font-size: 19px; }
 }
 @media (prefers-reduced-motion: reduce) {
     .install-overlay, .install-modal { transition: none; }
 }
-
 </style>
 </head>
 
 <body>
 
-
-
 <!-- INSTALL APP MODAL -->
 <div class="install-overlay" id="installOverlay" aria-hidden="true"></div>
 <section class="install-modal" id="installModal" role="dialog"
          aria-modal="true" aria-labelledby="installTitle" aria-describedby="installDescription">
+    <button class="install-close" id="installCloseBtn" type="button" aria-label="Close">&times;</button>
     <div class="install-handle" aria-hidden="true"></div>
     <div class="install-modal-top">
         <div class="install-app-icon">
@@ -965,7 +1061,8 @@ footer {
         <button class="install-now" id="installNowBtn" type="button">Install App</button>
         <button class="install-later" id="installLaterBtn" type="button">Maybe Later</button>
     </div>
-    <div class="install-help" id="installHelp" role="status"></div>
+    <button class="install-how" id="installHowBtn" type="button" aria-expanded="false" aria-controls="installGuide">How to install on my device</button>
+    <div class="install-guide" id="installGuide" hidden></div>
 </section>
 
 <main id="top">
@@ -1234,15 +1331,212 @@ tabs.forEach(function (tab, index) {
     });
 });
 
-/* INSTALL APP MODAL */
+/* INSTALL TUTORIAL: illustrations and steps for iPhone/iPad, Android and PC */
+window.MSDVGuide = (function () {
+    const NAVY = '#0a1d4d', RED = '#e03a3e', BLUE = '#2f6bff', GOLD = '#e8b21c';
+    const HOST = location.host || 'your-site';
+    const APP = 'MSDV';
+    const S = 'fill="none" stroke="#2f6bff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"';
+
+    const svg = inner => '<svg viewBox="0 0 240 150" xmlns="http://www.w3.org/2000/svg" role="img" aria-hidden="true">' + inner + '</svg>';
+    const t = (x, y, s, o = {}) =>
+        '<text x="' + x + '" y="' + y + '" font-size="' + (o.size || 11) + '" fill="' + (o.fill || '#0f1b3d') +
+        '" text-anchor="' + (o.anchor || 'start') + '" font-weight="' + (o.w || 400) +
+        '" font-family="Arial,Helvetica,sans-serif">' + s + '</text>';
+    const bg = fill => '<rect width="240" height="150" rx="12" fill="' + (fill || '#e9edf6') + '"/>';
+    const ring = (cx, cy, r) =>
+        '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="none" stroke="' + RED + '" stroke-width="3">' +
+        '<animate attributeName="r" values="' + r + ';' + (r + 4) + ';' + r + '" dur="1.3s" repeatCount="indefinite"/></circle>';
+    const ringR = (x, y, w, h, rx) =>
+        '<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" rx="' + (rx || 8) +
+        '" fill="none" stroke="' + RED + '" stroke-width="3"/>';
+    const lines = y =>
+        '<rect x="24" y="' + y + '" width="110" height="8" rx="4" fill="#cfd7e8"/>' +
+        '<rect x="24" y="' + (y + 16) + '" width="190" height="6" rx="3" fill="#dde3f0"/>' +
+        '<rect x="24" y="' + (y + 28) + '" width="160" height="6" rx="3" fill="#dde3f0"/>';
+    const appIcon = (x, y, s) =>
+        '<rect x="' + x + '" y="' + y + '" width="' + s + '" height="' + s + '" rx="' + Math.round(s * 0.23) + '" fill="' + NAVY + '"/>' +
+        t(x + s / 2, y + s * 0.68, 'M', { anchor: 'middle', fill: GOLD, w: 700, size: Math.round(s * 0.55) });
+
+    function homeScreen() {
+        let out = '<rect width="240" height="150" rx="12" fill="#2a4796"/>';
+        [16, 80].forEach(function (y, r) {
+            [26, 76, 126, 176].forEach(function (x, c) {
+                if (r === 1 && c === 0) return;
+                out += '<rect x="' + x + '" y="' + y + '" width="38" height="38" rx="9" fill="#fff" fill-opacity=".22"/>';
+            });
+        });
+        out += appIcon(26, 80, 38) + t(45, 132, APP, { anchor: 'middle', fill: '#fff', size: 9 }) + ringR(19, 74, 52, 64, 12);
+        return svg(out);
+    }
+
+    /* iPhone / iPad */
+    const iosShare = () => svg(bg() + lines(16) +
+        '<path d="M0 104H240V138A12 12 0 0 1 228 150H12A12 12 0 0 1 0 138Z" fill="#f8f9fc" stroke="#d8deeb"/>' +
+        '<path d="M32 119L25 127L32 135M74 119L81 127L74 135" ' + S + '/>' +
+        '<path d="M120 130V113M114 119L120 113L126 119M114 124H110V141H130V124H126" ' + S + '/>' +
+        '<rect x="158" y="119" width="20" height="15" rx="2" ' + S + '/>' +
+        '<rect x="203" y="119" width="15" height="15" rx="2" ' + S + '/>' +
+        ring(120, 128, 19));
+    const iosSheet = () => svg(bg('#c9cfdd') + '<rect x="26" y="12" width="188" height="128" rx="14" fill="#fff"/>' +
+        t(42, 36, 'Copy') + '<line x1="26" y1="48" x2="214" y2="48" stroke="#e3e8f2"/>' +
+        t(42, 66, 'Add to Bookmarks') + '<line x1="26" y1="78" x2="214" y2="78" stroke="#e3e8f2"/>' +
+        '<rect x="30" y="82" width="180" height="30" rx="8" fill="#fff0f0" stroke="' + RED + '" stroke-width="2.5"/>' +
+        t(42, 101, 'Add to Home Screen', { w: 700 }) +
+        '<rect x="184" y="90" width="16" height="16" rx="3" fill="none" stroke="#0f1b3d" stroke-width="1.6"/>' +
+        '<path d="M192 94V102M188 98H196" stroke="#0f1b3d" stroke-width="1.6"/>' +
+        '<line x1="26" y1="116" x2="214" y2="116" stroke="#e3e8f2"/>' + t(42, 132, 'Find on Page'));
+    const iosAdd = () => svg(bg('#c9cfdd') + '<rect x="20" y="14" width="200" height="122" rx="14" fill="#fff"/>' +
+        t(34, 40, 'Cancel', { fill: '#6b7690', size: 10 }) +
+        t(120, 40, 'Add to Home Screen', { anchor: 'middle', w: 700, size: 9 }) +
+        t(206, 40, 'Add', { anchor: 'end', fill: BLUE, w: 700, size: 11 }) + ringR(178, 26, 36, 20, 10) +
+        appIcon(36, 62, 40) +
+        '<rect x="86" y="64" width="124" height="36" rx="8" fill="#f2f5fb"/>' + t(96, 86, APP, { w: 700, size: 12 }) +
+        t(36, 122, HOST, { size: 9, fill: '#6b7690' }));
+
+    /* Android */
+    const andChrome = () => svg(bg() + lines(52) +
+        '<path d="M0 12A12 12 0 0 1 12 0H228A12 12 0 0 1 240 12V36H0Z" fill="#fff" stroke="#d8deeb"/>' +
+        '<rect x="12" y="8" width="170" height="20" rx="10" fill="#eef1f8"/>' + t(24, 22, HOST, { size: 10, fill: '#6b7690' }) +
+        '<circle cx="212" cy="10" r="2.3" fill="#0f1b3d"/><circle cx="212" cy="18" r="2.3" fill="#0f1b3d"/><circle cx="212" cy="26" r="2.3" fill="#0f1b3d"/>' +
+        ring(212, 18, 15));
+    const andMenu = () => svg(bg('#c9cfdd') + '<rect x="96" y="8" width="136" height="134" rx="10" fill="#fff" stroke="#d8deeb"/>' +
+        t(110, 32, 'New tab') + t(110, 54, 'New Incognito tab') +
+        '<rect x="100" y="66" width="128" height="26" rx="6" fill="#fff0f0" stroke="' + RED + '" stroke-width="2.5"/>' +
+        t(110, 83, 'Install app', { w: 700 }) + t(110, 112, 'Share…') + t(110, 132, 'Find in page'));
+    const andDialog = () => svg(bg('#c9cfdd') + '<rect x="20" y="30" width="200" height="92" rx="16" fill="#fff"/>' +
+        appIcon(36, 44, 30) + t(76, 57, 'Install app?', { w: 700, size: 12 }) + t(76, 72, HOST, { size: 9, fill: '#6b7690' }) +
+        t(110, 106, 'Cancel', { anchor: 'middle', fill: BLUE }) +
+        '<rect x="150" y="90" width="56" height="24" rx="12" fill="' + BLUE + '"/>' +
+        t(178, 106, 'Install', { anchor: 'middle', fill: '#fff', w: 700 }) + ringR(146, 86, 64, 32, 16));
+
+    /* PC */
+    const pcChrome = () => '<rect width="240" height="150" rx="10" fill="#e9edf6"/>' +
+        '<path d="M0 10A10 10 0 0 1 10 0H230A10 10 0 0 1 240 10V24H0Z" fill="#dfe4f0"/>' +
+        '<circle cx="12" cy="12" r="3" fill="#e03a3e"/><circle cx="24" cy="12" r="3" fill="#e8b21c"/><circle cx="36" cy="12" r="3" fill="#16a34a"/>' +
+        '<rect x="0" y="24" width="240" height="28" fill="#f8f9fc"/>' +
+        '<rect x="14" y="30" width="192" height="16" rx="8" fill="#fff" stroke="#d8deeb"/>' + t(26, 42, HOST, { size: 9, fill: '#6b7690' }) +
+        '<circle cx="226" cy="33" r="1.6" fill="#0f1b3d"/><circle cx="226" cy="38" r="1.6" fill="#0f1b3d"/><circle cx="226" cy="43" r="1.6" fill="#0f1b3d"/>';
+    const pcIcon = () => svg(pcChrome() + lines(64) +
+        '<g ' + S + '><rect x="178" y="32" width="14" height="10" rx="1.5"/><path d="M185 34V39M182.5 36.5L185 39L187.5 36.5"/></g>' +
+        ring(185, 38, 12));
+    const pcDialog = () => svg(pcChrome() +
+        '<rect x="108" y="54" width="124" height="88" rx="10" fill="#fff" stroke="#c9cfdd"/>' +
+        appIcon(120, 64, 26) + t(154, 76, 'Install app?', { w: 700, size: 10 }) + t(154, 88, HOST, { size: 8, fill: '#6b7690' }) +
+        t(136, 127, 'Cancel', { anchor: 'middle', fill: BLUE, size: 10 }) +
+        '<rect x="160" y="112" width="60" height="22" rx="11" fill="' + BLUE + '"/>' +
+        t(190, 127, 'Install', { anchor: 'middle', fill: '#fff', w: 700, size: 10 }) + ringR(156, 108, 68, 30, 15));
+    const pcApp = () => svg(bg() + '<rect x="28" y="14" width="184" height="122" rx="8" fill="#fff" stroke="#c9cfdd"/>' +
+        '<path d="M28 22A8 8 0 0 1 36 14H204A8 8 0 0 1 212 22V36H28Z" fill="' + NAVY + '"/>' +
+        '<rect x="36" y="20" width="12" height="12" rx="3" fill="#16337a"/>' + t(54, 30, APP, { fill: '#fff', w: 700, size: 10 }) +
+        '<rect x="44" y="54" width="100" height="10" rx="5" fill="#cfd7e8"/>' +
+        '<rect x="44" y="72" width="150" height="7" rx="3" fill="#dde3f0"/>' +
+        '<rect x="44" y="86" width="120" height="7" rx="3" fill="#dde3f0"/>' +
+        t(120, 122, 'Opens in its own window', { anchor: 'middle', size: 10, fill: '#6b7690' }));
+
+    const GUIDES = {
+        ios: {
+            label: 'iPhone / iPad',
+            note: 'Use <b>Safari</b>. Installing does not work from Facebook, Messenger or other in-app browsers.',
+            steps: [
+                { t: 'Tap the Share button', d: 'In Safari, tap the Share icon (a square with an arrow pointing up) in the bottom bar. On iPad it is at the top.', art: iosShare },
+                { t: 'Tap “Add to Home Screen”', d: 'Scroll down the list if you do not see it right away.', art: iosSheet },
+                { t: 'Tap “Add”', d: 'Keep the name as ' + APP + ', then tap <b>Add</b> in the top-right corner.', art: iosAdd },
+                { t: 'Open ' + APP + ' from your Home Screen', d: 'Close Safari, then tap the new ' + APP + ' icon.', art: homeScreen }
+            ]
+        },
+        android: {
+            label: 'Android',
+            note: 'Use <b>Chrome</b>. Installing does not work from Facebook, Messenger or other in-app browsers.',
+            steps: [
+                { t: 'Open the browser menu', d: 'Tap the three dots (⋮) at the top-right of Chrome.', art: andChrome },
+                { t: 'Tap “Install app”', d: 'Some phones show “Add to Home screen” instead. Choose that one. On Samsung Internet: tap ≡ → Add page to → Home screen.', art: andMenu },
+                { t: 'Tap “Install”', d: 'Confirm in the pop-up. The app is added to your phone.', art: andDialog },
+                { t: 'Open ' + APP, d: 'Find the ' + APP + ' icon on your home screen or in your app drawer.', art: homeScreen }
+            ]
+        },
+        pc: {
+            label: 'PC / Laptop',
+            note: 'Use <b>Google Chrome</b> or <b>Microsoft Edge</b>. Firefox cannot install web apps.',
+            steps: [
+                { t: 'Click the install icon', d: 'Look at the right end of the address bar for the install icon (a screen with a down arrow). Not there? Chrome: ⋮ → Cast, save and share → Install page as app. Edge: ⋯ → Apps → Install this site as an app.', art: pcIcon },
+                { t: 'Click “Install”', d: 'Confirm in the small pop-up window.', art: pcDialog },
+                { t: 'Open the ' + APP + ' app', d: 'It opens in its own window and is added to your Start menu / Applications.', art: pcApp }
+            ]
+        }
+    };
+
+    const ua = navigator.userAgent || '';
+    const isIOS = /iphone|ipad|ipod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    const isAndroid = /android/i.test(ua);
+    const inApp = /FBAN|FBAV|FB_IAB|Messenger|Instagram|Line\/|TikTok|Snapchat|Twitter|; wv\)/i.test(ua);
+    let current = isIOS ? 'ios' : (isAndroid ? 'android' : 'pc');
+
+    function render(container) {
+        const g = GUIDES[current];
+        let html = '';
+
+        if (inApp) {
+            html += '<div class="guide-note warn"><b>Open this page in your browser first.</b> You are inside another app (like Facebook or Messenger), which cannot install ' + APP +
+                '. Tap the ⋯ or ⋮ menu and choose <b>Open in browser</b>.</div>';
+        }
+
+        html += '<div class="guide-tabs" role="tablist" aria-label="Choose your device">' +
+            ['ios', 'android', 'pc'].map(function (k) {
+                return '<button type="button" role="tab" class="guide-tab" data-guide-tab="' + k +
+                    '" aria-selected="' + (k === current) + '">' + GUIDES[k].label + '</button>';
+            }).join('') + '</div>';
+
+        html += '<p class="guide-note">' + g.note + '</p><ol class="guide-list">' +
+            g.steps.map(function (step, i) {
+                return '<li class="guide-step"><div class="guide-art">' + step.art() + '</div>' +
+                    '<div class="guide-txt"><b><span>' + (i + 1) + '</span>' + step.t + '</b><p>' + step.d + '</p></div></li>';
+            }).join('') + '</ol>' +
+            '<div class="guide-dots" aria-hidden="true">' + g.steps.map(function (_, i) {
+                return '<i' + (i === 0 ? ' class="on"' : '') + '></i>';
+            }).join('') + '</div>';
+
+        container.innerHTML = html;
+
+        const list = container.querySelector('.guide-list');
+        const dots = container.querySelectorAll('.guide-dots i');
+        list.addEventListener('scroll', function () {
+            const i = Math.round(list.scrollLeft / list.clientWidth);
+            dots.forEach(function (d, n) { d.classList.toggle('on', n === i); });
+        });
+
+        if (!container.dataset.bound) {
+            container.dataset.bound = '1';
+            container.addEventListener('click', function (event) {
+                const tabButton = event.target.closest('[data-guide-tab]');
+                if (!tabButton) return;
+                current = tabButton.getAttribute('data-guide-tab');
+                render(container);
+            });
+        }
+    }
+
+    return { render: render };
+})();
+
+/* INSTALL APP MODAL (shows once for first-time visitors) */
 (function () {
     const modal = document.getElementById('installModal');
     const overlay = document.getElementById('installOverlay');
     const installButton = document.getElementById('installNowBtn');
     const laterButton = document.getElementById('installLaterBtn');
-    const help = document.getElementById('installHelp');
+    const howButton = document.getElementById('installHowBtn');
+    const guide = document.getElementById('installGuide');
     const dismissedKey = 'msdvInstallPromptDismissed';
     let deferredInstallPrompt = null;
+
+    function seenBefore() {
+        try { return localStorage.getItem(dismissedKey) === 'yes'; } catch (e) { return false; }
+    }
+
+    function remember() {
+        try { localStorage.setItem(dismissedKey, 'yes'); } catch (e) {}
+    }
 
     function isRunningAsInstalledApp() {
         return window.matchMedia('(display-mode: standalone)').matches ||
@@ -1250,8 +1544,24 @@ tabs.forEach(function (tab, index) {
             window.navigator.standalone === true;
     }
 
+
+    function setGuide(open) {
+        guide.hidden = !open;
+        howButton.setAttribute('aria-expanded', String(open));
+        howButton.textContent = open ? 'Hide instructions' : 'How to install on my device';
+
+        if (open) {
+            window.MSDVGuide.render(guide);
+            guide.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+
+    howButton.addEventListener('click', function () {
+        setGuide(guide.hidden);
+    });
+
     function openInstallModal() {
-        if (isRunningAsInstalledApp() || localStorage.getItem(dismissedKey) === 'yes') {
+        if (isRunningAsInstalledApp() || seenBefore()) {
             return;
         }
 
@@ -1259,6 +1569,7 @@ tabs.forEach(function (tab, index) {
         overlay.classList.add('show');
         modal.setAttribute('aria-hidden', 'false');
         overlay.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
     }
 
     function closeInstallModal(rememberChoice) {
@@ -1266,9 +1577,10 @@ tabs.forEach(function (tab, index) {
         overlay.classList.remove('show');
         modal.setAttribute('aria-hidden', 'true');
         overlay.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
 
         if (rememberChoice) {
-            localStorage.setItem(dismissedKey, 'yes');
+            remember();
         }
     }
 
@@ -1297,19 +1609,22 @@ tabs.forEach(function (tab, index) {
 
             if (result && result.outcome === 'accepted') {
                 closeInstallModal(true);
+            } else {
+                setGuide(true);
             }
             return;
         }
 
-        // The browser may not offer an install prompt yet, even if the site
-        // has a manifest. Give the visitor browser-specific manual guidance.
-        help.textContent = /iphone|ipad|ipod/i.test(navigator.userAgent)
-            ? 'To install on iPhone or iPad: tap Share in Safari, then choose “Add to Home Screen”.'
-            : 'If installation is available, open your browser menu (⋮) and choose “Install app” or “Add to Home screen”. This option may not appear until the website meets your browser’s install requirements.';
-        help.classList.add('show');
+        // The browser offers no install prompt (for example on iPhone):
+        // show the step-by-step tutorial for the visitor's device.
+        setGuide(true);
     });
 
     laterButton.addEventListener('click', function () {
+        closeInstallModal(true);
+    });
+
+    document.getElementById('installCloseBtn').addEventListener('click', function () {
         closeInstallModal(true);
     });
 
@@ -1323,21 +1638,18 @@ tabs.forEach(function (tab, index) {
         }
     });
 
-    // If installed, never show the prompt. Otherwise show it to first-time
-    // visitors who have not dismissed it, after the page has loaded.
+    // Show once to first-time visitors, shortly after the page has loaded.
     window.addEventListener('load', function () {
-        if (!isRunningAsInstalledApp() && localStorage.getItem(dismissedKey) !== 'yes') {
+        if (!isRunningAsInstalledApp() && !seenBefore()) {
             window.setTimeout(openInstallModal, 900);
         }
     });
 
-    // Also respond if the browser changes into standalone mode while open.
+    // Close if the browser switches into standalone mode while open.
     window.matchMedia('(display-mode: standalone)').addEventListener?.('change', function (event) {
         if (event.matches) closeInstallModal(true);
     });
 })();
-
 </script>
-
 </body>
 </html>
