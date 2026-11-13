@@ -300,14 +300,14 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .data-table td.actions { text-align:right; white-space:nowrap; }
 .empty-row td { padding:56px 16px !important; text-align:center; color:var(--text-3); font-size:13px; }
 
-/* Highlight the matching violation with a border only */
+/* Highlight the matching violation with a border only (follows the theme color) */
 tr.violation-highlight > td {
     background-color: transparent !important;
-    border-top: 1px solid #0030b3 !important;
-    border-bottom: 1px solid #0030b3 !important;
+    border-top: 1px solid var(--accent) !important;
+    border-bottom: 1px solid var(--accent) !important;
 }
-tr.violation-highlight > td:first-child { border-left: 1px solid #0030b3 !important; }
-tr.violation-highlight > td:last-child  { border-right: 1px solid #0030b3 !important; }
+tr.violation-highlight > td:first-child { border-left: 1px solid var(--accent) !important; }
+tr.violation-highlight > td:last-child  { border-right: 1px solid var(--accent) !important; }
 
 /* ── TABLE FOOTER + PAGINATION (colors come from the theme variables) ── */
 .table-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:14px 18px; background:var(--bg); border-top:1px solid var(--border); }
