@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once '../db/connection.php';
+require_once '../db/image_storage.php';
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     header('Location: ../login.php'); exit;
 }
@@ -41,6 +42,12 @@ if(isset($_POST['action'])&&$_POST['action']==='delete'){
             
             $userIdToDelete = $row['user_id'] ?? $rowByUsername['id'] ?? null;
 
+            // Remember image paths so the stored images can be removed after the delete
+            $pp=$pdo->prepare("SELECT profile_photo_path FROM students WHERE student_id=?");
+            $pp->execute([$sid]);$profilePhoto=$pp->fetchColumn();
+            $vp=$pdo->prepare("SELECT evidence_path,face_capture_path,signature_path FROM violations WHERE student_id=?");
+            $vp->execute([$sid]);$violImages=$vp->fetchAll(PDO::FETCH_NUM);
+
             // Delete child records first
             $pdo->prepare("DELETE FROM disciplinary_actions WHERE student_id=?")->execute([$sid]);
             $pdo->prepare("DELETE FROM appeals WHERE student_id=?")->execute([$sid]);
@@ -54,6 +61,10 @@ if(isset($_POST['action'])&&$_POST['action']==='delete'){
             }
 
             $pdo->commit();
+
+            // Free the stored images (profile photo + violation images)
+            removeStoredImage($pdo, $profilePhoto ?: null);
+            foreach($violImages as $imgRow){ foreach($imgRow as $imgPath){ removeStoredImage($pdo, $imgPath ?: null); } }
 
             $_SESSION['msg']='Student and user account deleted successfully.';
         } catch(Exception $e){
@@ -72,9 +83,8 @@ if($search){$where.=" AND (s.student_id LIKE ? OR s.full_name LIKE ?)";$params[]
 if($filterCourse){$where.=" AND s.course_id=?";$params[]=$filterCourse;}
 if($filterYear){$where.=" AND s.year_level=?";$params[]=$filterYear;}
 if($filterDept){$where.=" AND s.department_id=?";$params[]=$filterDept;}
-// The photo itself is NOT selected here (it is large). has_photo tells the page if one exists;
-// the image is loaded on demand from student-photo.php.
-$stmt=$pdo->prepare("SELECT s.student_id,s.full_name,s.course_id,s.year_level,s.department_id,s.user_id,(s.profile_photo_path IS NOT NULL AND s.profile_photo_path<>'') AS has_photo,c.name as course_name,d.name as dept_name,(SELECT COUNT(*) FROM violations v WHERE v.student_id=s.student_id) as total_violations FROM students s JOIN courses c ON s.course_id=c.id JOIN departments d ON s.department_id=d.id $where ORDER BY s.student_id");
+// s.* includes profile_photo_path (a short path like image.php?id=42)
+$stmt=$pdo->prepare("SELECT s.*,c.name as course_name,d.name as dept_name,(SELECT COUNT(*) FROM violations v WHERE v.student_id=s.student_id) as total_violations FROM students s JOIN courses c ON s.course_id=c.id JOIN departments d ON s.department_id=d.id $where ORDER BY s.student_id");
 $stmt->execute($params);$students=$stmt->fetchAll();
 function getRiskLevel($t){if($t>=5)return['label'=>'Critical','class'=>'danger','color'=>'#dc2626','bg'=>'#fff0f0'];if($t>=4)return['label'=>'High','class'=>'warning','color'=>'#d97706','bg'=>'#fffbeb'];if($t>=2)return['label'=>'Moderate','class'=>'info','color'=>'#2563eb','bg'=>'#eff4ff'];return['label'=>'Low','class'=>'success','color'=>'#16a34a','bg'=>'#f0fdf4'];}
 ?>
@@ -560,9 +570,9 @@ function viewStudent(st){
                       <td style="color:var(--text-3);">${v.sanction||'—'}</td>
                     </tr>`).join('');
 
-            const photo = Number(st.has_photo)
+            const photo = st.profile_photo_path
                 ? `<div class="profile-photo-box">
-                     <img src="student-photo.php?sid=${encodeURIComponent(st.student_id)}" alt="Profile photo">
+                     <img src="../${escHtml(st.profile_photo_path)}" alt="Profile photo">
                      <div><div class="info-key">Profile Photo</div>
                      <div style="font-size:12px;color:var(--text-3);">Uploaded during enrollment</div></div>
                    </div>`
