@@ -650,6 +650,16 @@ $previewRisk = $pdo->query("
             .bk-hint { display:none; }
             .bk-bar-wrap { left:0; }
         }
+        .notif-dropdown { color:var(--text); }
+.unread-pill { background:color-mix(in srgb, var(--accent) 14%, var(--surface)); color:var(--accent); }
+.notif-item:hover { background:color-mix(in srgb, var(--text) 5%, var(--surface)); }
+.notif-item.unread { background:color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.notif-item.unread:hover { background:color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.notif-avatar { background:color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.notif-avatar i { color:var(--accent); }
+.notif-item.unread .notif-avatar { background:color-mix(in srgb, var(--accent) 24%, var(--surface)); }
+.notif-item.unread .notif-avatar i { color:var(--accent); }
+.notif-dot-ind { background:var(--accent); }
     </style>
 </head>
 
@@ -819,6 +829,7 @@ $previewRisk = $pdo->query("
                 <input type="checkbox" class="bk-cb" id="selectAll">
                 Select all tables
             </label>
+           
         </div>
 
 
