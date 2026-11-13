@@ -960,3 +960,130 @@ body {
 .notif-empty p {
     color: var(--text-muted, #9ca3af);
 }
+
+
+/* ==============================
+   NOTIFICATIONS FOLLOW THE THEME
+   Link this AFTER each page's <style> block.
+   Selectors are prefixed with .notif-dropdown so they
+   win over the page's base rules regardless of order.
+============================== */
+
+.notif-dropdown {
+    background: var(--surface, #fff);
+    color: var(--text, #111827);
+    border-color: var(--border, #eaecf0);
+}
+
+.notif-dropdown .notif-head,
+.notif-dropdown .notif-item {
+    border-bottom-color: var(--border-soft, var(--border, #f2f4f7));
+}
+
+.notif-dropdown .notif-head-left span {
+    color: var(--text, #111827);
+}
+
+.notif-dropdown .mark-all-btn {
+    color: var(--text-3, #9ca3af);
+}
+.notif-dropdown .mark-all-btn:hover {
+    background: color-mix(in srgb, var(--text, #111827) 8%, var(--surface, #fff));
+    color: var(--text, #111827);
+}
+
+.notif-dropdown .notif-scroll::-webkit-scrollbar-thumb {
+    background: var(--border, #eaecf0);
+}
+
+/* rows */
+.notif-dropdown .notif-item:hover {
+    background: color-mix(in srgb, var(--text, #111827) 5%, var(--surface, #fff));
+}
+.notif-dropdown .notif-item.unread {
+    background: color-mix(in srgb, var(--accent, #2563eb) 6%, var(--surface, #fff));
+}
+.notif-dropdown .notif-item.unread:hover {
+    background: color-mix(in srgb, var(--accent, #2563eb) 12%, var(--surface, #fff));
+}
+
+/* text */
+.notif-dropdown .notif-msg,
+.notif-dropdown .notif-text {
+    color: var(--text-2, #6b7280);
+}
+.notif-dropdown .notif-item.unread .notif-msg,
+.notif-dropdown .notif-item.unread .notif-text {
+    color: var(--text, #111827);
+}
+.notif-dropdown .notif-ts {
+    color: var(--text-3, #9ca3af);
+}
+
+/* exclamation circle + icon */
+.notif-dropdown .notif-avatar {
+    background: color-mix(in srgb, var(--accent, #2563eb) 12%, var(--surface, #fff));
+}
+.notif-dropdown .notif-avatar i {
+    color: var(--accent, #2563eb);
+}
+.notif-dropdown .notif-item.unread .notif-avatar {
+    background: color-mix(in srgb, var(--accent, #2563eb) 24%, var(--surface, #fff));
+}
+.notif-dropdown .notif-item.unread .notif-avatar i {
+    color: var(--accent, #2563eb);
+}
+
+/* unread dot + "new" pill */
+.notif-dropdown .notif-dot-ind,
+.notif-dropdown .notif-dot {
+    background: var(--accent, #2563eb);
+}
+.notif-dropdown .unread-pill {
+    background: color-mix(in srgb, var(--accent, #2563eb) 14%, var(--surface, #fff));
+    color: var(--accent, #2563eb);
+}
+
+/* empty state */
+.notif-dropdown .notif-empty i,
+.notif-dropdown .notif-empty p {
+    color: var(--text-3, #9ca3af);
+}
+
+
+/* ==============================
+   NOTIFICATION CIRCLE FIX
+   Translucent tints: no dependency on --surface,
+   so it matches the other admin pages in any theme.
+============================== */
+
+.notif-dropdown .notif-avatar {
+    background: color-mix(in srgb, var(--accent, #2563eb) 18%, transparent);
+}
+.notif-dropdown .notif-avatar i {
+    color: var(--accent, #2563eb);
+}
+.notif-dropdown .notif-item.unread .notif-avatar {
+    background: color-mix(in srgb, var(--accent, #2563eb) 30%, transparent);
+}
+.notif-dropdown .notif-item.unread .notif-avatar i {
+    color: var(--accent, #2563eb);
+}
+
+.notif-dropdown .notif-item:hover {
+    background: color-mix(in srgb, var(--text, #111827) 6%, transparent);
+}
+.notif-dropdown .notif-item.unread {
+    background: color-mix(in srgb, var(--accent, #2563eb) 8%, transparent);
+}
+.notif-dropdown .notif-item.unread:hover {
+    background: color-mix(in srgb, var(--accent, #2563eb) 14%, transparent);
+}
+
+.notif-dropdown .unread-pill {
+    background: color-mix(in srgb, var(--accent, #2563eb) 18%, transparent);
+    color: var(--accent, #2563eb);
+}
+.notif-dropdown .mark-all-btn:hover {
+    background: color-mix(in srgb, var(--text, #111827) 8%, transparent);
+}
