@@ -1,5 +1,5 @@
 <?php
-// Stores report images (evidence, face capture, signature) inside TiDB so they
+// Stores report images (evidence, face capture, signature, profile photo) inside TiDB so they
 // survive Render redeploys. Render's disk is wiped on every restart, so the
 // old uploads/ folder lost files.
 //
@@ -63,4 +63,54 @@ function decodeImageDataUrl(string $dataUrl): ?string {
     }
     $bytes = base64_decode($m[2], true);
     return $bytes === false ? null : $bytes;
+}
+
+/* ───────────── helpers for deleting / reading stored images ───────────── */
+
+/** "image.php?id=42" -> 42 (null if the path is not a stored-image path). */
+function storedImageId(?string $path): ?int {
+    return ($path && preg_match('/^image\.php\?id=(\d+)$/', $path, $m)) ? (int)$m[1] : null;
+}
+
+/** File extension for a mime type. */
+function storedImageExt(string $mime): string {
+    return ['image/jpeg'=>'jpg','image/png'=>'png','image/gif'=>'gif','image/webp'=>'webp'][$mime] ?? 'jpg';
+}
+
+/**
+ * Deletes an image by its stored path: removes the stored_images row, or
+ * (for old records) the legacy file under uploads/. Safe to call with null.
+ */
+function removeStoredImage(PDO $pdo, ?string $path): void {
+    if (!$path) return;
+    $id = storedImageId($path);
+    if ($id !== null) {
+        $pdo->prepare("DELETE FROM stored_images WHERE id=?")->execute([$id]);
+        return;
+    }
+    $root = realpath(__DIR__ . '/..');
+    $full = realpath($root . '/' . ltrim($path, '/'));
+    if ($full && strpos($full, $root . DIRECTORY_SEPARATOR) === 0 && is_file($full)) @unlink($full);
+}
+
+/**
+ * Loads an image by its stored path. Returns ['mime'=>..., 'data'=>...] or null.
+ * Works for stored_images paths and for old uploads/ file paths.
+ */
+function loadStoredImage(PDO $pdo, ?string $path, bool $withData = true): ?array {
+    if (!$path) return null;
+    $id = storedImageId($path);
+    if ($id !== null) {
+        $q = $pdo->prepare($withData ? "SELECT mime, data FROM stored_images WHERE id=?" : "SELECT mime FROM stored_images WHERE id=?");
+        $q->execute([$id]);
+        $row = $q->fetch(PDO::FETCH_ASSOC);
+        if (!$row) return null;
+        $data = null;
+        if ($withData) $data = is_resource($row['data']) ? stream_get_contents($row['data']) : $row['data'];
+        return ['mime' => $row['mime'], 'data' => $data];
+    }
+    $root = realpath(__DIR__ . '/..');
+    $full = realpath($root . '/' . ltrim($path, '/'));
+    if (!$full || strpos($full, $root . DIRECTORY_SEPARATOR) !== 0 || !is_file($full)) return null;
+    return ['mime' => mime_content_type($full) ?: 'application/octet-stream', 'data' => $withData ? file_get_contents($full) : null];
 }
