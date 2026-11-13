@@ -74,17 +74,71 @@ if(isset($_POST['action'])&&$_POST['action']==='delete_user'){
     header('Location: user-management.php');exit;
 }
 
+// ── Pagination: 10 rows per page, each tab has its own page counter ──
+$perPage = 10;
+
+/* ── STAFF (filter + pagination) ── */
 $searchStaff=trim($_GET['search_staff']??'');$filterRole=$_GET['role']??'';
 $whereStaff="WHERE role NOT IN ('admin','student')";$paramsStaff=[];
 if($searchStaff){$whereStaff.=" AND (full_name LIKE ? OR username LIKE ?)";$paramsStaff[]="%$searchStaff%";$paramsStaff[]="%$searchStaff%";}
 if($filterRole&&$filterRole!=='student'){$whereStaff.=" AND role=?";$paramsStaff[]=$filterRole;}
-$staffStmt=$pdo->prepare("SELECT * FROM users $whereStaff ORDER BY role,full_name");$staffStmt->execute($paramsStaff);$staffUsers=$staffStmt->fetchAll();
 
+$cStmt=$pdo->prepare("SELECT COUNT(*) FROM users $whereStaff");$cStmt->execute($paramsStaff);
+$totalStaff=(int)$cStmt->fetchColumn();
+$totalStaffPages=max(1,(int)ceil($totalStaff/$perPage));
+$staffPage=min(max(1,(int)($_GET['spage']??1)),$totalStaffPages);
+$staffOffset=($staffPage-1)*$perPage;
+$staffStmt=$pdo->prepare("SELECT * FROM users $whereStaff ORDER BY role,full_name,id LIMIT $perPage OFFSET $staffOffset");
+$staffStmt->execute($paramsStaff);$staffUsers=$staffStmt->fetchAll();
+
+/* ── STUDENTS (filter + pagination) ── */
 $searchStu=trim($_GET['search_stu']??'');$whereStu="WHERE u.role='student'";$paramsStu=[];
 if($searchStu){$whereStu.=" AND (u.full_name LIKE ? OR u.username LIKE ? OR s.student_id LIKE ?)";$paramsStu[]="%$searchStu%";$paramsStu[]="%$searchStu%";$paramsStu[]="%$searchStu%";}
-$stuStmt=$pdo->prepare("SELECT u.*,s.student_id as sid FROM users u LEFT JOIN students s ON s.user_id=u.id $whereStu ORDER BY u.full_name");$stuStmt->execute($paramsStu);$studentUsers=$stuStmt->fetchAll();
+
+$cStmt=$pdo->prepare("SELECT COUNT(*) FROM users u LEFT JOIN students s ON s.user_id=u.id $whereStu");$cStmt->execute($paramsStu);
+$totalStudents=(int)$cStmt->fetchColumn();
+$totalStuPages=max(1,(int)ceil($totalStudents/$perPage));
+$stuPage=min(max(1,(int)($_GET['tpage']??1)),$totalStuPages);
+$stuOffset=($stuPage-1)*$perPage;
+$stuStmt=$pdo->prepare("SELECT u.*,s.student_id as sid FROM users u LEFT JOIN students s ON s.user_id=u.id $whereStu ORDER BY u.full_name,u.id LIMIT $perPage OFFSET $stuOffset");
+$stuStmt->execute($paramsStu);$studentUsers=$stuStmt->fetchAll();
 
 $activeTab=$_GET['tab']??'staff';
+
+// Link to another page; keeps search, filter and the active tab
+function pageUrl($key,$p,$tab){ $q=$_GET; $q[$key]=$p; $q['tab']=$tab; return '?'.http_build_query($q); }
+
+// Page numbers to show: 1 … 4 5 [6] 7 8 … 20
+function pageWindow($cur,$total){
+    $pages=[1,$total];
+    for($i=$cur-2;$i<=$cur+2;$i++){ if($i>1&&$i<$total) $pages[]=$i; }
+    $pages=array_values(array_unique($pages)); sort($pages);
+    $out=[];$prev=0;
+    foreach($pages as $p){ if($p-$prev>1) $out[]='…'; $out[]=$p; $prev=$p; }
+    return $out;
+}
+
+// One footer renderer, used by both tabs
+function renderPager($key,$tab,$page,$totalPages,$total,$offset,$count,$noun){
+    ?>
+    <div class="table-foot">
+      <div class="foot-info">
+        <?php if($total>0): ?>Showing <strong><?= $offset+1 ?>–<?= $offset+$count ?></strong> of <strong><?= $total ?></strong> <?= $noun ?><?= $total!==1?'s':'' ?> · Page <strong><?= $page ?></strong> of <strong><?= $totalPages ?></strong>
+        <?php else: ?>No <?= $noun ?>s to show<?php endif; ?>
+      </div>
+      <div class="pager">
+        <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pageUrl($key,1,$tab)) ?>" aria-label="First page"><i class="fas fa-angles-left" style="font-size:10px;"></i></a>
+        <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pageUrl($key,$page-1,$tab)) ?>" aria-label="Previous page"><i class="fas fa-chevron-left" style="font-size:10px;"></i></a>
+        <?php foreach(pageWindow($page,$totalPages) as $p): ?>
+          <?php if($p==='…'): ?><span class="pg-gap">…</span>
+          <?php else: ?><a class="pg-btn <?= $p==$page?'active':'' ?>" href="<?= htmlspecialchars(pageUrl($key,$p,$tab)) ?>"><?= $p ?></a><?php endif; ?>
+        <?php endforeach; ?>
+        <a class="pg-btn <?= $page>=$totalPages?'disabled':'' ?>" href="<?= $page>=$totalPages?'#':htmlspecialchars(pageUrl($key,$page+1,$tab)) ?>" aria-label="Next page"><i class="fas fa-chevron-right" style="font-size:10px;"></i></a>
+        <a class="pg-btn <?= $page>=$totalPages?'disabled':'' ?>" href="<?= $page>=$totalPages?'#':htmlspecialchars(pageUrl($key,$totalPages,$tab)) ?>" aria-label="Last page"><i class="fas fa-angles-right" style="font-size:10px;"></i></a>
+      </div>
+    </div>
+    <?php
+}
 ?>
 <?php require_once 'theme-head.php'; ?>
 <!DOCTYPE html>
@@ -97,6 +151,7 @@ $activeTab=$_GET['tab']??'staff';
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="notif-theme.css">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -126,7 +181,16 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 
 /* ── MAIN ── */
 .main-content { margin-left:260px; width:calc(100% - 260px); min-height:100vh; display:flex; flex-direction:column; }
-
+.notif-dropdown { color:var(--text); }
+.unread-pill { background:color-mix(in srgb, var(--accent) 14%, var(--surface)); color:var(--accent); }
+.notif-item:hover { background:color-mix(in srgb, var(--text) 5%, var(--surface)); }
+.notif-item.unread { background:color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.notif-item.unread:hover { background:color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.notif-avatar { background:color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.notif-avatar i { color:var(--accent); }
+.notif-item.unread .notif-avatar { background:color-mix(in srgb, var(--accent) 24%, var(--surface)); }
+.notif-item.unread .notif-avatar i { color:var(--accent); }
+.notif-dot-ind { background:var(--accent); }
 /* ── NAVBAR ── */
 .navbar { background:var(--sidebar); padding:0 28px; height:60px; position:fixed; left:260px; right:0; top:0; display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid var(--sidebar-red); z-index:1000; }
 .navbar h1 { color:#fff; font-size:18px; font-weight:600; letter-spacing:-0.2px; }
@@ -235,6 +299,23 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .data-table td.name { font-weight:500; }
 .data-table td.muted { color:var(--text-2); }
 .empty-row td { padding:40px 16px; text-align:center; color:var(--text-3); font-size:13px; }
+
+/* ── TABLE FOOTER + PAGINATION ── */
+.table-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:14px 18px; background:var(--bg); border-top:1px solid var(--border); }
+.foot-info { font-size:12.5px; color:var(--text-3); }
+.foot-info strong { color:var(--text); font-weight:600; }
+.pager { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.pg-btn { min-width:36px; height:36px; padding:0 11px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text-2); font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
+.pg-btn:hover { background:var(--accent-light); color:var(--accent); border-color:var(--accent); transform:translateY(-1px); }
+.pg-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent); pointer-events:none; }
+.pg-btn.disabled { opacity:.4; pointer-events:none; }
+.pg-gap { color:var(--text-3); padding:0 4px; font-size:13px; }
+@media (max-width: 768px) {
+    .table-foot { justify-content:center; text-align:center; padding:10px 12px; }
+    .foot-info  { width:100%; }
+    .pager      { justify-content:center; }
+    .pg-btn     { min-width:32px; height:32px; padding:0 8px; font-size:12px; }
+}
 
 /* Role badge */
 .role-badge { display:inline-flex; align-items:center; padding:2px 10px; border-radius:20px; font-size:11px; font-weight:600; }
@@ -383,15 +464,15 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
       </button>
     </div>
 
-    <!-- Tabs -->
+    <!-- Tabs (the pills show the total matches, not just the current page) -->
     <div class="tab-bar">
       <button class="tab-btn <?= $activeTab==='staff'?'active':'' ?>" id="staffTabBtn" onclick="switchTab('staff')">
         <i class="fas fa-id-badge" style="font-size:12px;"></i> Staff
-        <span class="tab-pill"><?= count($staffUsers) ?></span>
+        <span class="tab-pill"><?= $totalStaff ?></span>
       </button>
       <button class="tab-btn <?= $activeTab==='student'?'active':'' ?>" id="studentTabBtn" onclick="switchTab('student')">
         <i class="fas fa-user-graduate" style="font-size:12px;"></i> Student Accounts
-        <span class="tab-pill"><?= count($studentUsers) ?></span>
+        <span class="tab-pill"><?= $totalStudents ?></span>
       </button>
     </div>
 
@@ -434,6 +515,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
             <?php endforeach; endif; ?>
           </tbody>
         </table>
+        <?php renderPager('spage','staff',$staffPage,$totalStaffPages,$totalStaff,$staffOffset,count($staffUsers),'user'); ?>
       </div>
     </div>
 
@@ -465,6 +547,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
             <?php endforeach; endif; ?>
           </tbody>
         </table>
+        <?php renderPager('tpage','student',$stuPage,$totalStuPages,$totalStudents,$stuOffset,count($studentUsers),'account'); ?>
       </div>
     </div>
 
