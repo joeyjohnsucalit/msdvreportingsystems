@@ -101,7 +101,7 @@ if($filterCat){$where.=" AND v.category=?";$params[]=$filterCat;}
 if($filterStatus){$where.=" AND v.status=?";$params[]=$filterStatus;}
 
 // ── Pagination: only one page of violations is loaded at a time (20 per page) ──
-$perPage = 20;
+$perPage = 10;
 $page = max(1, (int)($_GET['page'] ?? 1));
 $joins = "FROM violations v
   JOIN students s ON v.student_id=s.student_id
@@ -430,6 +430,16 @@ tr.violation-highlight > td:last-child  { border-right: 1px solid #0030b3 !impor
     .pager      { justify-content:center; }
     .pg-btn     { min-width:32px; height:32px; padding:0 8px; font-size:12px; }
 }
+.notif-dropdown { color:var(--text); }
+.unread-pill { background:color-mix(in srgb, var(--accent) 14%, var(--surface)); color:var(--accent); }
+.notif-item:hover { background:color-mix(in srgb, var(--text) 5%, var(--surface)); }
+.notif-item.unread { background:color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.notif-item.unread:hover { background:color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.notif-avatar { background:color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.notif-avatar i { color:var(--accent); }
+.notif-item.unread .notif-avatar { background:color-mix(in srgb, var(--accent) 24%, var(--surface)); }
+.notif-item.unread .notif-avatar i { color:var(--accent); }
+.notif-dot-ind { background:var(--accent); }
 </style>
 </head>
 <body>
