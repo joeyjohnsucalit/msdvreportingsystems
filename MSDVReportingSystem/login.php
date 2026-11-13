@@ -24,7 +24,7 @@ function redirectByRole($role) {
             header('Location: csu/report-form.php');
             break;
         case 'teacher':
-            header('Location: teacher/report-form.php');
+            header('Location: jassu/report-form.php');
             break;
         default:
             header('Location: login.html?error=' . urlencode('Unknown role. Please contact the administrator.'));
