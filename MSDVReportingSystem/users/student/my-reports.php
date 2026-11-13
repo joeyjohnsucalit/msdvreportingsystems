@@ -19,6 +19,7 @@ $reports = $pdo->prepare("
 $reports->execute([$_SESSION['user_id']]);
 $myReports = $reports->fetchAll();
 ?>
+<?php require_once 'theme-mode.php'; ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
