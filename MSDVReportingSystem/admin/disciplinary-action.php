@@ -33,14 +33,45 @@ if (isset($_POST['action']) && $_POST['action'] === 'update_status') {
             $_SESSION['msg']='Status updated to '.ucfirst($newStatus).'.';
         }
     }
-    header('Location: disciplinary-action.php'); exit;
+    // Stay on the same page (and keep the search / status filters) after updating.
+    // The modal form has no action attribute, so it posts to the current URL and keeps the query string.
+    $qs = $_SERVER['QUERY_STRING'] ?? '';
+    header('Location: disciplinary-action.php'.($qs !== '' ? '?'.$qs : '')); exit;
 }
 
 $search=trim($_GET['search']??''); $filterStatus=$_GET['status']??'';
 $where="WHERE 1=1"; $params=[];
 if($search){$where.=" AND (s.full_name LIKE ? OR da.student_id LIKE ?)";$params[]="%$search%";$params[]="%$search%";}
 if($filterStatus){$where.=" AND da.status=?";$params[]=$filterStatus;}
-$stmt=$pdo->prepare("SELECT da.*,s.full_name,v.violation,v.category FROM disciplinary_actions da JOIN students s ON da.student_id=s.student_id JOIN violations v ON da.violation_id=v.id $where ORDER BY da.id DESC");
+
+// ── Pagination: 10 records per page ──
+$perPage = 10;
+$page = max(1, (int)($_GET['page'] ?? 1));
+$joins = "FROM disciplinary_actions da
+  JOIN students s ON da.student_id=s.student_id
+  JOIN violations v ON da.violation_id=v.id";
+
+$countStmt=$pdo->prepare("SELECT COUNT(*) $joins $where");
+$countStmt->execute($params);
+$totalRecords=(int)$countStmt->fetchColumn();
+$totalPages=max(1,(int)ceil($totalRecords/$perPage));
+if($page>$totalPages) $page=$totalPages;
+$offset=($page-1)*$perPage;   // integers, so they are safe to put in the query
+
+// Link to another page while keeping the current search and filters
+function pageUrl($p){ $q=$_GET; $q['page']=$p; return '?'.http_build_query($q); }
+
+// Page numbers to show: 1 … 4 5 [6] 7 8 … 20
+function pageWindow($cur,$total){
+    $pages=[1,$total];
+    for($i=$cur-2;$i<=$cur+2;$i++){ if($i>1&&$i<$total) $pages[]=$i; }
+    $pages=array_values(array_unique($pages)); sort($pages);
+    $out=[];$prev=0;
+    foreach($pages as $p){ if($p-$prev>1) $out[]='…'; $out[]=$p; $prev=$p; }
+    return $out;
+}
+
+$stmt=$pdo->prepare("SELECT da.*,s.full_name,v.violation,v.category $joins $where ORDER BY da.id DESC LIMIT $perPage OFFSET $offset");
 $stmt->execute($params); $daList=$stmt->fetchAll();
 ?>
 <?php require_once 'theme-head.php'; ?>
@@ -54,6 +85,7 @@ $stmt->execute($params); $daList=$stmt->fetchAll();
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="notif-theme.css">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -122,7 +154,16 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .notif-empty { padding:40px 20px; text-align:center; }
 .notif-empty i { font-size:24px; color:var(--text-3); display:block; margin-bottom:8px; }
 .notif-empty p { font-size:13px; color:var(--text-3); margin:0; }
-
+.notif-dropdown { color:var(--text); }
+.unread-pill { background:color-mix(in srgb, var(--accent) 14%, var(--surface)); color:var(--accent); }
+.notif-item:hover { background:color-mix(in srgb, var(--text) 5%, var(--surface)); }
+.notif-item.unread { background:color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.notif-item.unread:hover { background:color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.notif-avatar { background:color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.notif-avatar i { color:var(--accent); }
+.notif-item.unread .notif-avatar { background:color-mix(in srgb, var(--accent) 24%, var(--surface)); }
+.notif-item.unread .notif-avatar i { color:var(--accent); }
+.notif-dot-ind { background:var(--accent); }
 /* User chip */
 .user-chip { display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.1); padding:5px 12px 5px 6px; border-radius:20px; }
 .user-avatar { width:26px; height:26px; border-radius:50%; background:rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:#fff; flex-shrink:0; }
@@ -179,6 +220,23 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .data-table td.name { font-weight:500; }
 .data-table td.muted { color:var(--text-2); }
 .empty-row td { padding:40px 16px; text-align:center; color:var(--text-3); font-size:13px; }
+
+/* ── TABLE FOOTER + PAGINATION ── */
+.table-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:14px 18px; background:var(--bg); border-top:1px solid var(--border); }
+.foot-info { font-size:12.5px; color:var(--text-3); }
+.foot-info strong { color:var(--text); font-weight:600; }
+.pager { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.pg-btn { min-width:36px; height:36px; padding:0 11px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text-2); font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
+.pg-btn:hover { background:var(--accent-light); color:var(--accent); border-color:var(--accent); transform:translateY(-1px); }
+.pg-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent); pointer-events:none; }
+.pg-btn.disabled { opacity:.4; pointer-events:none; }
+.pg-gap { color:var(--text-3); padding:0 4px; font-size:13px; }
+@media (max-width: 768px) {
+    .table-foot { justify-content:center; text-align:center; padding:10px 12px; }
+    .foot-info  { width:100%; }
+    .pager      { justify-content:center; }
+    .pg-btn     { min-width:32px; height:32px; padding:0 8px; font-size:12px; }
+}
 
 /* Mini badge */
 .mini-badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px; font-size:10.5px; font-weight:600; }
@@ -315,9 +373,6 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
     <div class="alert-banner error"><i class="fas fa-exclamation-circle"></i><?= $_SESSION['err'] ?><?php unset($_SESSION['err']); ?></div>
     <?php endif; ?>
 
-    <!-- Page top -->
-    
-
     <!-- Filter bar -->
     <form method="GET" class="filter-bar">
       <input type="text" name="search" class="filter-input" placeholder="Search by name or ID…" value="<?= htmlspecialchars($search) ?>">
@@ -332,7 +387,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
     </form>
 
     <!-- Count -->
-    <div class="count-badge">Showing <strong><?= count($daList) ?></strong> record<?= count($daList)!==1?'s':'' ?></div>
+    <div class="count-badge">Showing <strong><?= count($daList) ?></strong> of <strong><?= $totalRecords ?></strong> record<?= $totalRecords!==1?'s':'' ?></div>
 
     <!-- Table -->
     <div class="table-wrap">
@@ -377,7 +432,24 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
           <?php endforeach; endif; ?>
         </tbody>
       </table>
-    </div>
+
+      <div class="table-foot">
+        <div class="foot-info">
+          <?php if($totalRecords>0): ?>Showing <strong><?= $offset+1 ?>–<?= $offset+count($daList) ?></strong> of <strong><?= $totalRecords ?></strong> record<?= $totalRecords!==1?'s':'' ?> · Page <strong><?= $page ?></strong> of <strong><?= $totalPages ?></strong>
+          <?php else: ?>No records to show<?php endif; ?>
+        </div>
+        <div class="pager">
+          <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pageUrl(1)) ?>" aria-label="First page"><i class="fas fa-angles-left" style="font-size:10px;"></i></a>
+          <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pageUrl($page-1)) ?>" aria-label="Previous page"><i class="fas fa-chevron-left" style="font-size:10px;"></i></a>
+          <?php foreach(pageWindow($page,$totalPages) as $p): ?>
+            <?php if($p==='…'): ?><span class="pg-gap">…</span>
+            <?php else: ?><a class="pg-btn <?= $p==$page?'active':'' ?>" href="<?= htmlspecialchars(pageUrl($p)) ?>"><?= $p ?></a><?php endif; ?>
+          <?php endforeach; ?>
+          <a class="pg-btn <?= $page>=$totalPages?'disabled':'' ?>" href="<?= $page>=$totalPages?'#':htmlspecialchars(pageUrl($page+1)) ?>" aria-label="Next page"><i class="fas fa-chevron-right" style="font-size:10px;"></i></a>
+          <a class="pg-btn <?= $page>=$totalPages?'disabled':'' ?>" href="<?= $page>=$totalPages?'#':htmlspecialchars(pageUrl($totalPages)) ?>" aria-label="Last page"><i class="fas fa-angles-right" style="font-size:10px;"></i></a>
+        </div>
+      </div>
+    </div><!-- /table-wrap -->
 
   </div><!-- /content -->
 </div><!-- /main-content -->
