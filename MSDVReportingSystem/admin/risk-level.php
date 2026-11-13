@@ -14,7 +14,8 @@ $notifStmt = $pdo->prepare("SELECT * FROM notifications WHERE user_id=? ORDER BY
 $notifStmt->execute([$_SESSION['user_id']]);
 $notifList = $notifStmt->fetchAll();
 
-$allStudents = $pdo->query("SELECT s.student_id,s.full_name,SUM(CASE WHEN v.category='minor' THEN 1 ELSE 0 END) as minor_count,SUM(CASE WHEN v.category='major' THEN 1 ELSE 0 END) as major_count,COUNT(v.id) as total FROM students s LEFT JOIN violations v ON s.student_id=v.student_id GROUP BY s.student_id")->fetchAll();
+// ORDER BY keeps the row order the same on every page
+$allStudents = $pdo->query("SELECT s.student_id,s.full_name,SUM(CASE WHEN v.category='minor' THEN 1 ELSE 0 END) as minor_count,SUM(CASE WHEN v.category='major' THEN 1 ELSE 0 END) as major_count,COUNT(v.id) as total FROM students s LEFT JOIN violations v ON s.student_id=v.student_id GROUP BY s.student_id,s.full_name ORDER BY s.student_id")->fetchAll();
 
 /* ── POINT SYSTEM: minor = 1 point, major = 2 points ── */
 function getScore($minor, $major){
@@ -39,12 +40,36 @@ foreach($allStudents as $s){
 }
 
 $search=trim($_GET['search']??'');$filterRisk=$_GET['risk']??'';
-$filtered=array_filter($allStudents,function($s)use($search,$filterRisk){
+$filtered=array_values(array_filter($allStudents,function($s)use($search,$filterRisk){
     $r = getRisk($s['minor_count'], $s['major_count']);
     $ms=!$search||stripos($s['full_name'],$search)!==false||stripos($s['student_id'],$search)!==false;
     $mr=!$filterRisk||$r['label']===$filterRisk;
     return $ms&&$mr;
-});
+}));
+
+// ── Pagination: 10 students per page ──
+// The risk level is worked out in PHP, so the filtered list is cut into pages here
+// (not with SQL LIMIT) and only the current page is shown.
+$perPage = 10;
+$page = max(1, (int)($_GET['page'] ?? 1));
+$totalStudents = count($filtered);
+$totalPages = max(1, (int)ceil($totalStudents / $perPage));
+if ($page > $totalPages) $page = $totalPages;
+$offset = ($page - 1) * $perPage;
+$pageRows = array_slice($filtered, $offset, $perPage);
+
+// Link to another page while keeping the current search and filter
+function pageUrl($p){ $q=$_GET; $q['page']=$p; return '?'.http_build_query($q); }
+
+// Page numbers to show: 1 … 4 5 [6] 7 8 … 20
+function pageWindow($cur,$total){
+    $pages=[1,$total];
+    for($i=$cur-2;$i<=$cur+2;$i++){ if($i>1&&$i<$total) $pages[]=$i; }
+    $pages=array_values(array_unique($pages)); sort($pages);
+    $out=[];$prev=0;
+    foreach($pages as $p){ if($p-$prev>1) $out[]='…'; $out[]=$p; $prev=$p; }
+    return $out;
+}
 ?>
 <?php require_once 'theme-head.php'; ?>
 <!DOCTYPE html>
@@ -57,6 +82,7 @@ $filtered=array_filter($allStudents,function($s)use($search,$filterRisk){
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="notif-theme.css">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -83,7 +109,16 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .sidebar_content ul li a i { font-size:14px; width:18px; text-align:center; flex-shrink:0; }
 .sidebar_content ul li a:hover { background:rgba(255,255,255,0.06); color:#fff; }
 .sidebar_content ul li a.active { background:rgba(255,255,255,0.07); color:#fff; border-left:3px solid var(--sidebar-red); padding-left:15px; margin-left:8px; }
-
+.notif-dropdown { color:var(--text); }
+.unread-pill { background:color-mix(in srgb, var(--accent) 14%, var(--surface)); color:var(--accent); }
+.notif-item:hover { background:color-mix(in srgb, var(--text) 5%, var(--surface)); }
+.notif-item.unread { background:color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.notif-item.unread:hover { background:color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.notif-avatar { background:color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.notif-avatar i { color:var(--accent); }
+.notif-item.unread .notif-avatar { background:color-mix(in srgb, var(--accent) 24%, var(--surface)); }
+.notif-item.unread .notif-avatar i { color:var(--accent); }
+.notif-dot-ind { background:var(--accent); }
 /* ── MAIN ── */
 .main-content { margin-left:260px; width:calc(100% - 260px); min-height:100vh; display:flex; flex-direction:column; }
 
@@ -187,6 +222,23 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .data-table td.name { font-weight:500; }
 .empty-row td { padding:40px 16px; text-align:center; color:var(--text-3); font-size:13px; }
 
+/* ── TABLE FOOTER + PAGINATION ── */
+.table-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:14px 18px; background:var(--bg); border-top:1px solid var(--border); }
+.foot-info { font-size:12.5px; color:var(--text-3); }
+.foot-info strong { color:var(--text); font-weight:600; }
+.pager { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.pg-btn { min-width:36px; height:36px; padding:0 11px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text-2); font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
+.pg-btn:hover { background:var(--accent-light); color:var(--accent); border-color:var(--accent); transform:translateY(-1px); }
+.pg-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent); pointer-events:none; }
+.pg-btn.disabled { opacity:.4; pointer-events:none; }
+.pg-gap { color:var(--text-3); padding:0 4px; font-size:13px; }
+@media (max-width: 768px) {
+    .table-foot { justify-content:center; text-align:center; padding:10px 12px; }
+    .foot-info  { width:100%; }
+    .pager      { justify-content:center; }
+    .pg-btn     { min-width:32px; height:32px; padding:0 8px; font-size:12px; }
+}
+
 /* Risk badge */
 .risk-badge { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; }
 .risk-badge .dot { width:5px; height:5px; border-radius:50%; }
@@ -278,7 +330,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
   <!-- CONTENT -->
   <div class="content">
 
-    <!-- Summary cards -->
+    <!-- Summary cards (count all students, not just the current page) -->
     <div class="summary-grid">
       <div class="summary-card">
         <div class="summary-icon moderate"><i class="fas fa-info-circle"></i></div>
@@ -321,7 +373,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
     </form>
 
     <!-- Count -->
-    <div class="count-badge">Showing <strong><?= count($filtered) ?></strong> student<?= count($filtered)!==1?'s':'' ?></div>
+    <div class="count-badge">Showing <strong><?= count($pageRows) ?></strong> of <strong><?= $totalStudents ?></strong> student<?= $totalStudents!==1?'s':'' ?></div>
 
     <!-- Table -->
     <div class="table-wrap">
@@ -336,9 +388,9 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
           </tr>
         </thead>
         <tbody>
-          <?php if(empty($filtered)): ?>
+          <?php if(empty($pageRows)): ?>
           <tr class="empty-row"><td colspan="5"><i class="fas fa-users" style="font-size:20px;display:block;margin-bottom:8px;"></i>No students found</td></tr>
-          <?php else: foreach($filtered as $s):
+          <?php else: foreach($pageRows as $s):
               $risk  = getRisk($s['minor_count'], $s['major_count']);
               $minorCount = (int)$s['minor_count'];
               $majorCount = (int)$s['major_count'];
@@ -372,7 +424,24 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
           <?php endforeach; endif; ?>
         </tbody>
       </table>
-    </div>
+
+      <div class="table-foot">
+        <div class="foot-info">
+          <?php if($totalStudents>0): ?>Showing <strong><?= $offset+1 ?>–<?= $offset+count($pageRows) ?></strong> of <strong><?= $totalStudents ?></strong> student<?= $totalStudents!==1?'s':'' ?> · Page <strong><?= $page ?></strong> of <strong><?= $totalPages ?></strong>
+          <?php else: ?>No students to show<?php endif; ?>
+        </div>
+        <div class="pager">
+          <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pageUrl(1)) ?>" aria-label="First page"><i class="fas fa-angles-left" style="font-size:10px;"></i></a>
+          <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pageUrl($page-1)) ?>" aria-label="Previous page"><i class="fas fa-chevron-left" style="font-size:10px;"></i></a>
+          <?php foreach(pageWindow($page,$totalPages) as $p): ?>
+            <?php if($p==='…'): ?><span class="pg-gap">…</span>
+            <?php else: ?><a class="pg-btn <?= $p==$page?'active':'' ?>" href="<?= htmlspecialchars(pageUrl($p)) ?>"><?= $p ?></a><?php endif; ?>
+          <?php endforeach; ?>
+          <a class="pg-btn <?= $page>=$totalPages?'disabled':'' ?>" href="<?= $page>=$totalPages?'#':htmlspecialchars(pageUrl($page+1)) ?>" aria-label="Next page"><i class="fas fa-chevron-right" style="font-size:10px;"></i></a>
+          <a class="pg-btn <?= $page>=$totalPages?'disabled':'' ?>" href="<?= $page>=$totalPages?'#':htmlspecialchars(pageUrl($totalPages)) ?>" aria-label="Last page"><i class="fas fa-angles-right" style="font-size:10px;"></i></a>
+        </div>
+      </div>
+    </div><!-- /table-wrap -->
 
   </div><!-- /content -->
 </div><!-- /main-content -->
