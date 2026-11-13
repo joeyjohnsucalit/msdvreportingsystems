@@ -772,3 +772,90 @@ body {
         max-width: 360px;
     }
 }
+
+
+/* ==============================
+   NOTIFICATION THEME OVERRIDES
+   (keep at the END of the file)
+============================== */
+
+.notif-dropdown {
+    background: var(--surface, #fff);
+    color: var(--text, #111827);
+    border-color: var(--border, #eaecf0);
+}
+
+.notif-head,
+.notif-item {
+    border-bottom-color: var(--border, #f2f4f7);
+}
+
+.notif-head-left span {
+    color: var(--text, #111827);
+}
+
+.mark-all-btn {
+    color: var(--text-muted, #9ca3af);
+}
+.mark-all-btn:hover {
+    background: color-mix(in srgb, var(--text, #111827) 8%, var(--surface, #fff));
+    color: var(--text, #111827);
+}
+
+.notif-scroll::-webkit-scrollbar-thumb {
+    background: var(--border, #eaecf0);
+}
+
+/* items */
+.notif-item:hover {
+    background: color-mix(in srgb, var(--text, #111827) 5%, var(--surface, #fff));
+}
+.notif-item.unread {
+    background: color-mix(in srgb, var(--accent, #2563eb) 6%, var(--surface, #fff));
+}
+.notif-item.unread:hover {
+    background: color-mix(in srgb, var(--accent, #2563eb) 12%, var(--surface, #fff));
+}
+
+/* text */
+.notif-msg,
+.notif-text {
+    color: var(--text-muted, #6b7280);
+}
+.notif-item.unread .notif-msg,
+.notif-item.unread .notif-text {
+    color: var(--text, #111827);
+}
+.notif-ts {
+    color: var(--text-muted, #9ca3af);
+}
+
+/* avatar */
+.notif-avatar {
+    background: color-mix(in srgb, var(--accent, #2563eb) 12%, var(--surface, #fff));
+}
+.notif-avatar i {
+    color: var(--accent, #2563eb);
+}
+.notif-item.unread .notif-avatar {
+    background: color-mix(in srgb, var(--accent, #2563eb) 24%, var(--surface, #fff));
+}
+.notif-item.unread .notif-avatar i {
+    color: var(--accent, #2563eb);
+}
+
+/* unread pill + dot */
+.unread-pill {
+    background: color-mix(in srgb, var(--accent, #2563eb) 14%, var(--surface, #fff));
+    color: var(--accent, #2563eb);
+}
+.notif-dot-ind,
+.notif-dot {
+    background: var(--accent, #2563eb);
+}
+
+/* empty state */
+.notif-empty i,
+.notif-empty p {
+    color: var(--text-muted, #9ca3af);
+}
