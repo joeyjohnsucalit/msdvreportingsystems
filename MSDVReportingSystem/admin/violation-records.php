@@ -383,7 +383,8 @@ tr.violation-highlight > td:last-child  { border-right: 1px solid #0030b3 !impor
 
 /* ── VIOLATION DETAILS (view modal) ── */
 .vv-hero { display:flex; align-items:center; gap:16px; padding:16px 18px; border:1px solid var(--border); border-radius:var(--r-md); background:var(--accent-light); margin-bottom:16px; flex-wrap:wrap; }
-.vv-ini { width:56px; height:56px; border-radius:50%; background:var(--accent); color:#fff; font-size:19px; font-weight:600; letter-spacing:.5px; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 6px 16px rgba(37,99,235,.25); }
+.vv-photo { width:76px; height:76px; border-radius:50%; object-fit:cover; flex-shrink:0; border:3px solid var(--surface); box-shadow:0 6px 16px rgba(0,0,0,.18); }
+.vv-ini { width:76px; height:76px; border-radius:50%; background:var(--accent); color:#fff; font-size:24px; font-weight:600; letter-spacing:.5px; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 6px 16px rgba(37,99,235,.25); }
 .vv-hero-main { flex:1; min-width:200px; }
 .vv-name { font-size:18px; font-weight:600; letter-spacing:-0.3px; line-height:1.25; }
 .vv-id { font-family:monospace; font-size:12.5px; color:var(--accent); letter-spacing:.4px; margin:2px 0 8px; }
@@ -401,7 +402,7 @@ tr.violation-highlight > td:last-child  { border-right: 1px solid #0030b3 !impor
 .vv-row { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px; }
 .vv-row .k { color:var(--text-3); font-size:11.5px; font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
 .vv-row .v { color:var(--text); font-weight:500; text-align:right; }
-.att-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+.att-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }
 .att-card { border:1px solid var(--border); border-radius:var(--r-md); padding:12px; background:var(--surface); }
 .att-card .att-label { margin-bottom:8px; }
 .att-card .media-box { min-height:120px; }
@@ -726,9 +727,6 @@ function renderViolation(v){
     const sig = v.signature_path
         ? `<div class="media-box"><img src="../${escHtml(v.signature_path)}" alt="Signature" style="max-height:80px;"></div>`
         : `<div class="media-box"><span class="no-media"><i class="fas fa-signature" style="margin-right:6px;"></i>No signature</span></div>`;
-    const profile = v.profile_photo_path
-        ? `<div class="media-box"><img src="../${escHtml(v.profile_photo_path)}" alt="Profile"></div>`
-        : `<div class="media-box"><span class="no-media"><i class="fas fa-user-circle" style="margin-right:6px;"></i>No profile photo</span></div>`;
 
     // Face verification result
     const faceBadge = v.face_match==='match'
@@ -743,9 +741,17 @@ function renderViolation(v){
         ? `<span class="mini-badge ${escHtml(v.reporter_staff_type)}">${escHtml(STAFF_TYPE_LABELS[v.reporter_staff_type] || v.reporter_staff_type)}</span>`
         : '—';
 
+    // Profile photo goes in the top banner; initials show if there is no photo
+    const ini = escHtml(initialsOf(v.full_name));
+    const heroAvatar = v.profile_photo_path
+        ? `<img class="vv-photo" src="../${escHtml(v.profile_photo_path)}" alt=""
+                onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+           <div class="vv-ini" style="display:none;">${ini}</div>`
+        : `<div class="vv-ini">${ini}</div>`;
+
     document.getElementById('vvBody').innerHTML = `
         <div class="vv-hero">
-          <div class="vv-ini">${escHtml(initialsOf(v.full_name))}</div>
+          ${heroAvatar}
           <div class="vv-hero-main">
             <div class="vv-name">${escHtml(v.full_name)}</div>
             <div class="vv-id">${escHtml(v.student_id)}</div>
@@ -786,7 +792,6 @@ function renderViolation(v){
           <div class="att-card"><div class="att-label">Evidence</div>${evidence}</div>
           <div class="att-card"><div class="att-label">Face Capture</div>${face}</div>
           <div class="att-card"><div class="att-label">E-Signature</div>${sig}</div>
-          <div class="att-card"><div class="att-label">Profile Photo</div>${profile}</div>
         </div>`;
 
     document.getElementById('vvDeleteBtn').onclick = () =>
