@@ -2,6 +2,7 @@
 // api/enroll-webhook.php  — receives Google Form submissions and enrolls the student
 header('Content-Type: application/json');
 require_once '../db/connection.php';
+require_once '../db/image_storage.php';
 
 function out($code, $ok, $msg) {
     http_response_code($code);
@@ -44,17 +45,22 @@ $lastFive = substr(str_replace('-', '', $sid), -5);
 $hashed   = password_hash($lastFive, PASSWORD_DEFAULT);
 
 /* ── Profile photo (base64 sent by the Google Form script) ──
-   Stored INSIDE the students table (profile_photo_path) as a data URI, so it
-   survives Render restarts. Accepts only real JPG/PNG/WEBP images up to 3 MB.
+   Saved in the stored_images table (db/image_storage.php) so it survives Render
+   restarts. students.profile_photo_path keeps the path "image.php?id=N".
+   The image is stored BEFORE the transaction because CREATE TABLE inside
+   storeImage() would otherwise end the transaction early.
    If the photo is missing or invalid, the student is still enrolled without one. */
-$photoData = null;
+$photoPath = null;
 $b64 = (string)($in['profile_photo'] ?? '');
 if ($b64 !== '') {
-    $bin  = base64_decode($b64, true);
-    $info = $bin ? @getimagesizefromstring($bin) : false;
-    $okMime = ['image/jpeg', 'image/png', 'image/webp'];
-    if ($info && in_array($info['mime'], $okMime, true) && strlen($bin) <= 3 * 1024 * 1024) {
-        $photoData = 'data:' . $info['mime'] . ';base64,' . base64_encode($bin);
+    $bin = base64_decode($b64, true);
+    if ($bin !== false) {
+        try {
+            $photoPath = storeImage($pdo, $bin, 'profile');
+        } catch (RuntimeException $e) {
+            error_log('Enroll photo skipped: ' . $e->getMessage());
+            $photoPath = null;
+        }
     }
 }
 
@@ -64,11 +70,12 @@ try {
         ->execute([$fname, $sid, $hashed]);
     $uid = $pdo->lastInsertId();
     $pdo->prepare("INSERT INTO students (student_id,full_name,course_id,year_level,department_id,user_id,profile_photo_path) VALUES (?,?,?,?,?,?,?)")
-        ->execute([$sid, $fname, $course['id'], $year, $course['department_id'], $uid, $photoData]);
+        ->execute([$sid, $fname, $course['id'], $year, $course['department_id'], $uid, $photoPath]);
     $pdo->commit();
     out(200, true, 'Student enrolled');
 } catch (Exception $e) {
     $pdo->rollBack();
+    removeStoredImage($pdo, $photoPath);   // don't leave an orphan image
     error_log('Enroll webhook error: ' . $e->getMessage());
     out(500, false, 'Server error');
 }
