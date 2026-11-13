@@ -14,30 +14,39 @@ $notifStmt = $pdo->prepare("SELECT * FROM notifications WHERE user_id=? ORDER BY
 $notifStmt->execute([$_SESSION['user_id']]);
 $notifList = $notifStmt->fetchAll();
 
-// ORDER BY keeps the row order the same on every page
-$allStudents = $pdo->query("SELECT s.student_id,s.full_name,SUM(CASE WHEN v.category='minor' THEN 1 ELSE 0 END) as minor_count,SUM(CASE WHEN v.category='major' THEN 1 ELSE 0 END) as major_count,COUNT(v.id) as total FROM students s LEFT JOIN violations v ON s.student_id=v.student_id GROUP BY s.student_id,s.full_name ORDER BY s.student_id")->fetchAll();
+// Only students with at least one violation are listed. ORDER BY keeps the row order the same on every page
+$allStudents = $pdo->query("SELECT s.student_id,s.full_name,SUM(CASE WHEN v.category='minor' THEN 1 ELSE 0 END) as minor_count,SUM(CASE WHEN v.category='major' THEN 1 ELSE 0 END) as major_count,COUNT(v.id) as total FROM students s LEFT JOIN violations v ON s.student_id=v.student_id GROUP BY s.student_id,s.full_name HAVING COUNT(v.id)>0 ORDER BY s.student_id")->fetchAll();
 
 /* ── POINT SYSTEM: minor = 1 point, major = 2 points ── */
 function getScore($minor, $major){
     return ((int)$minor * 1) + ((int)$major * 2);
 }
 
-/* 0-2 Low | 3-5 Moderate | 6-8 High | 9+ Critical */
+/* 0-1 Low | 2-5 Moderate | 6-8 High | 9+ Critical */
 function getRisk($minor, $major){
     $score = getScore($minor, $major);
-    if($score >= 9) return ['label'=>'Critical','class'=>'danger', 'color'=>'#dc2626','bg'=>'#fff0f0'];
-    if($score >= 6) return ['label'=>'High',    'class'=>'warning','color'=>'#d97706','bg'=>'#fffbeb'];
-    if($score >= 2) return ['label'=>'Moderate','class'=>'info',   'color'=>'#2563eb','bg'=>'#eff4ff'];
-    return               ['label'=>'Low',     'class'=>'success','color'=>'#16a34a','bg'=>'#f0fdf4'];
+    if($score >= 9) return ['label'=>'Critical','class'=>'danger', 'color'=>'#dc2626','bg'=>'#fff0f0','level'=>4];
+    if($score >= 6) return ['label'=>'High',    'class'=>'warning','color'=>'#d97706','bg'=>'#fffbeb','level'=>3];
+    if($score >= 2) return ['label'=>'Moderate','class'=>'info',   'color'=>'#2563eb','bg'=>'#eff4ff','level'=>2];
+    return               ['label'=>'Low',     'class'=>'success','color'=>'#16a34a','bg'=>'#f0fdf4','level'=>1];
 }
 
-$moderate=0;$high=0;$critical=0;
+// Initials for the avatar circle
+function initials($name){
+    $parts=preg_split('/\s+/',trim($name)); $i='';
+    foreach($parts as $p){ if($p!==''){ $i.=mb_strtoupper(mb_substr($p,0,1)); if(mb_strlen($i)>=2) break; } }
+    return $i?:'?';
+}
+
+$low=0;$moderate=0;$high=0;$critical=0;
 foreach($allStudents as $s){
     $r = getRisk($s['minor_count'], $s['major_count']);
+    if($r['label']==='Low')      $low++;
     if($r['label']==='Moderate') $moderate++;
     if($r['label']==='High')     $high++;
     if($r['label']==='Critical') $critical++;
 }
+$allCount = count($allStudents);
 
 $search=trim($_GET['search']??'');$filterRisk=$_GET['risk']??'';
 $filtered=array_values(array_filter($allStudents,function($s)use($search,$filterRisk){
@@ -60,6 +69,9 @@ $pageRows = array_slice($filtered, $offset, $perPage);
 
 // Link to another page while keeping the current search and filter
 function pageUrl($p){ $q=$_GET; $q['page']=$p; return '?'.http_build_query($q); }
+
+// Link for a risk tab: keeps the search, resets to page 1
+function riskUrl($r){ $q=$_GET; unset($q['page']); if($r==='') unset($q['risk']); else $q['risk']=$r; $s=http_build_query($q); return 'risk-level.php'.($s?'?'.$s:''); }
 
 // Page numbers to show: 1 … 4 5 [6] 7 8 … 20
 function pageWindow($cur,$total){
@@ -166,61 +178,77 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .user-avatar { width:26px; height:26px; border-radius:50%; background:rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:#fff; flex-shrink:0; }
 .user-name { font-size:12.5px; color:#c8cce0; font-weight:500; }
 
-/* ── CONTENT ── */
+/* ═══════════ REDESIGNED CONTENT AREA ═══════════ */
+:root {
+    --r-low:#16a34a;  --r-low-bg:#e9f9ef;
+    --r-mod:#2563eb;  --r-mod-bg:#eff4ff;
+    --r-high:#d97706; --r-high-bg:#fff6e0;
+    --r-crit:#dc2626; --r-crit-bg:#fff0f0;
+}
 .content { margin-top:60px; padding:28px 32px 40px; flex:1; }
 
-/* Page top */
-.page-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
-.page-top h2 { font-size:22px; font-weight:600; color:var(--text); letter-spacing:-0.4px; margin:0 0 3px; }
-.page-top p  { font-size:13px; color:var(--text-3); margin:0; }
-
 /* Summary cards */
-.summary-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:24px; }
-.summary-card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); padding:18px 20px; display:flex; align-items:center; gap:14px; }
-.summary-icon { width:42px; height:42px; border-radius:var(--r-sm); display:flex; align-items:center; justify-content:center; font-size:17px; flex-shrink:0; }
-.summary-icon.moderate { background:#eff4ff; color:#2563eb; }
-.summary-icon.high     { background:#fffbeb; color:#d97706; }
-.summary-icon.critical { background:#fff0f0; color:#dc2626; }
-.summary-label { font-size:12px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:3px; }
-.summary-value { font-size:26px; font-weight:600; color:var(--text); line-height:1; }
-.summary-sub { font-size:11.5px; color:var(--text-3); margin-top:2px; }
+.stat-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:22px; }
+.stat { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:18px 20px 16px; }
+.stat-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.stat-label { font-size:11.5px; font-weight:600; letter-spacing:.5px; text-transform:uppercase; color:var(--text-3); }
+.stat-ico { width:30px; height:30px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:12px; background:var(--sbg); color:var(--sc); }
+.stat-num { font-size:30px; font-weight:600; letter-spacing:-1px; line-height:1; color:var(--text); }
+.stat-pct { font-size:11.5px; color:var(--text-3); margin-top:8px; }
+.stat.low      { --sc:var(--r-low);  --sbg:var(--r-low-bg); }
+.stat.moderate { --sc:var(--r-mod);  --sbg:var(--r-mod-bg); }
+.stat.high     { --sc:var(--r-high); --sbg:var(--r-high-bg); }
+.stat.critical { --sc:var(--r-crit); --sbg:var(--r-crit-bg); }
 
-/* Filter bar */
-.filter-bar { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); padding:16px 20px; margin-bottom:20px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-.filter-input, .filter-select {
-    font-size:13px; padding:8px 12px; border-radius:var(--r-sm);
-    border:1px solid var(--border); background:#fff; color:var(--text);
-    font-family:'Plus Jakarta Sans',sans-serif; outline:none;
-    transition:border-color 0.15s; height:36px;
-}
-.filter-input:focus, .filter-select:focus { border-color:var(--accent); }
-.filter-input { min-width:200px; }
-.filter-select { appearance:none; -webkit-appearance:none; padding-right:28px; cursor:pointer;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239ca3af' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-    background-repeat:no-repeat; background-position:right 8px center; background-color:#fff;
-}
-.filter-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:var(--r-sm); font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all 0.15s; height:36px; border:1px solid; }
-.filter-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-.filter-btn.primary:hover { background:#1d4ed8; }
-.filter-btn.secondary { background:#fff; color:var(--text-2); border-color:var(--border); text-decoration:none; }
-.filter-btn.secondary:hover { background:var(--bg); }
+/* Toolbar: risk tabs + search */
+.toolbar { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:16px; }
+.seg { display:inline-flex; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:4px; gap:2px; flex-wrap:wrap; }
+.seg a { display:inline-flex; align-items:center; gap:7px; padding:7px 14px; border-radius:9px; font-size:12.5px; font-weight:500; color:var(--text-2); text-decoration:none; transition:all .15s; }
+.seg a:hover { color:var(--text); background:var(--border-soft); }
+.seg a.active { background:var(--accent); color:#fff; box-shadow:0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent); }
+.seg .n { font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:20px; background:var(--border-soft); color:var(--text-3); }
+.seg a.active .n { background:rgba(255,255,255,.22); color:#fff; }
+.search-form { display:flex; align-items:center; gap:8px; }
+.search-box { position:relative; }
+.search-box i { position:absolute; left:13px; top:50%; transform:translateY(-50%); font-size:12px; color:var(--text-3); pointer-events:none; }
+.search-box input { height:40px; min-width:270px; padding:0 14px 0 36px; border-radius:12px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:13px; font-family:'Plus Jakarta Sans',sans-serif; outline:none; transition:all .15s; }
+.search-box input:focus { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+.btn-go { height:40px; padding:0 16px; border-radius:12px; border:none; background:var(--accent); color:#fff; font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:background .15s; }
+.btn-go:hover { background:#1d4ed8; }
+.btn-reset { height:40px; padding:0 14px; display:inline-flex; align-items:center; border-radius:12px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); font-size:13px; font-weight:500; text-decoration:none; transition:background .15s; }
+.btn-reset:hover { background:var(--bg); color:var(--text); }
 
-/* Count badge */
-.count-badge { font-size:12px; color:var(--text-3); margin-bottom:10px; }
-.count-badge strong { color:var(--text); }
-
-/* ── TABLE ── */
-.table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; }
+/* ── TABLE CARD ── */
+.table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden; box-shadow:0 1px 2px rgba(16,24,40,.03); }
 .data-table { width:100%; border-collapse:collapse; font-size:13px; }
-.data-table thead tr { border-bottom:1px solid var(--border); }
-.data-table thead th { padding:11px 16px; font-size:10.5px; font-weight:600; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-3); background:var(--bg); white-space:nowrap; }
-.data-table tbody tr { border-bottom:1px solid var(--border-soft); transition:background 0.1s; }
+.data-table thead th { padding:13px 18px; font-size:10.5px; font-weight:600; letter-spacing:.6px; text-transform:uppercase; color:var(--text-3); background:var(--bg); border-bottom:1px solid var(--border); white-space:nowrap; text-align:left; }
+.data-table tbody tr { border-bottom:1px solid var(--border-soft); transition:background .12s; }
 .data-table tbody tr:last-child { border-bottom:none; }
-.data-table tbody tr:hover { background:#fafbfc; }
-.data-table td { padding:13px 16px; color:var(--text); vertical-align:middle; }
-.data-table td.sid { font-weight:600; font-family:monospace; font-size:12.5px; color:var(--accent); letter-spacing:0.2px; }
-.data-table td.name { font-weight:500; }
-.empty-row td { padding:40px 16px; text-align:center; color:var(--text-3); font-size:13px; }
+.data-table tbody tr:hover { background:color-mix(in srgb, var(--accent) 3%, var(--surface)); }
+.data-table td { padding:15px 18px; color:var(--text); vertical-align:middle; }
+.empty-row td { padding:56px 16px; text-align:center; color:var(--text-3); font-size:13px; }
+.empty-row i { font-size:28px; display:block; margin-bottom:10px; opacity:.6; }
+
+/* Student cell */
+.stu-name { font-weight:600; font-size:13.5px; line-height:1.25; }
+.data-table td.sid { font-weight:600; font-family:monospace; font-size:12.5px; color:var(--accent); letter-spacing:.2px; white-space:nowrap; }
+
+/* Tally pips */
+.tally-wrap { display:flex; gap:4px; align-items:center; }
+.pip { width:14px; height:14px; border-radius:4px; flex-shrink:0; }
+.pip.minor-filled  { background:#2563eb; }
+.pip.minor-empty   { background:transparent; border:2px solid color-mix(in srgb, #2563eb 35%, var(--surface)); }
+.pip.major-filled  { background:#dc2626; }
+.pip.major-empty   { background:transparent; border:2px solid color-mix(in srgb, #dc2626 35%, var(--surface)); }
+.pip-extra { font-size:11px; font-weight:600; margin-left:3px; }
+.pip-extra.minor { color:#2563eb; }
+.pip-extra.major { color:#dc2626; }
+.tally-num { font-size:11px; color:var(--text-3); margin-top:6px; }
+.tally-num b { color:var(--text-2); font-weight:600; }
+
+/* Risk badge */
+.risk-badge { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; padding:4px 11px; border-radius:20px; }
+.risk-badge .dot { width:6px; height:6px; border-radius:50%; }
 
 /* ── TABLE FOOTER + PAGINATION ── */
 .table-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:14px 18px; background:var(--bg); border-top:1px solid var(--border); }
@@ -232,27 +260,24 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .pg-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent); pointer-events:none; }
 .pg-btn.disabled { opacity:.4; pointer-events:none; }
 .pg-gap { color:var(--text-3); padding:0 4px; font-size:13px; }
+
+@media (max-width: 992px) {
+    .table-wrap { overflow-x:auto; }
+    .data-table { min-width:760px; }
+}
 @media (max-width: 768px) {
+    .content { padding:22px 16px 32px; }
+    .stat-strip { grid-template-columns:1fr; }
+    .toolbar { flex-direction:column; align-items:stretch; }
+    .seg { overflow-x:auto; flex-wrap:nowrap; }
+    .search-form { width:100%; }
+    .search-box { flex:1; }
+    .search-box input { min-width:0; width:100%; }
     .table-foot { justify-content:center; text-align:center; padding:10px 12px; }
     .foot-info  { width:100%; }
     .pager      { justify-content:center; }
     .pg-btn     { min-width:32px; height:32px; padding:0 8px; font-size:12px; }
 }
-
-/* Risk badge */
-.risk-badge { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; }
-.risk-badge .dot { width:5px; height:5px; border-radius:50%; }
-
-/* Tally pips */
-.tally-wrap { display:flex; gap:4px; align-items:center; }
-.pip { width:14px; height:14px; border-radius:3px; flex-shrink:0; }
-.pip.minor-filled  { background:#2563eb; }
-.pip.minor-empty   { background:transparent; border:2px solid #2563eb; }
-.pip.major-filled  { background:#dc2626; }
-.pip.major-empty   { background:transparent; border:2px solid #dc2626; }
-.pip-extra { font-size:11px; font-weight:600; margin-left:2px; }
-.pip-extra.minor { color:#2563eb; }
-.pip-extra.major { color:#dc2626; }
 </style>
 </head>
 <body>
@@ -331,49 +356,46 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
   <div class="content">
 
     <!-- Summary cards (count all students, not just the current page) -->
-    <div class="summary-grid">
-      <div class="summary-card">
-        <div class="summary-icon moderate"><i class="fas fa-info-circle"></i></div>
-        <div>
-          <div class="summary-label">Moderate Risk</div>
-          <div class="summary-value"><?= $moderate ?></div>
-         
+    <div class="stat-strip">
+      <?php
+      $stats=[
+        'moderate' =>['Moderate Risk', 'fa-info-circle',         $moderate],
+        'high'     =>['High Risk',     'fa-exclamation-circle',  $high],
+        'critical' =>['Critical',      'fa-triangle-exclamation',    $critical],
+      ];
+      foreach($stats as $key=>$meta):
+        $pct=$allCount>0?round($meta[2]/$allCount*100):0;
+      ?>
+      <div class="stat <?= $key ?>">
+        <div class="stat-top">
+          <span class="stat-label"><?= $meta[0] ?></span>
+          <span class="stat-ico"><i class="fas <?= $meta[1] ?>"></i></span>
         </div>
+        <div class="stat-num"><?= $meta[2] ?></div>
+        <div class="stat-pct"><?= $pct ?>% of <?= $allCount ?> student<?= $allCount!==1?'s':'' ?></div>
       </div>
-      <div class="summary-card">
-        <div class="summary-icon high"><i class="fas fa-exclamation-circle"></i></div>
-        <div>
-          <div class="summary-label">High Risk</div>
-          <div class="summary-value"><?= $high ?></div>
-        
-        </div>
-      </div>
-      <div class="summary-card">
-        <div class="summary-icon critical"><i class="fas fa-skull-crossbones"></i></div>
-        <div>
-          <div class="summary-label">Critical</div>
-          <div class="summary-value"><?= $critical ?></div>
-       
-        </div>
-      </div>
+      <?php endforeach; ?>
     </div>
 
-    <!-- Filter bar -->
-    <form method="GET" class="filter-bar">
-      <input type="text" name="search" class="filter-input" placeholder="Search by ID or name…" value="<?= htmlspecialchars($search) ?>">
-      <select name="risk" class="filter-select">
-        <option value="">All Risk Levels</option>
-        <option value="Low"      <?=$filterRisk==='Low'     ?'selected':''?>>Low</option>
-        <option value="Moderate" <?=$filterRisk==='Moderate'?'selected':''?>>Moderate</option>
-        <option value="High"     <?=$filterRisk==='High'    ?'selected':''?>>High</option>
-        <option value="Critical" <?=$filterRisk==='Critical'?'selected':''?>>Critical</option>
-      </select>
-      <button type="submit" class="filter-btn primary"><i class="fas fa-search" style="font-size:11px;"></i> Search</button>
-      <a href="risk-level.php" class="filter-btn secondary">Reset</a>
-    </form>
-
-    <!-- Count -->
-    <div class="count-badge">Showing <strong><?= count($pageRows) ?></strong> of <strong><?= $totalStudents ?></strong> student<?= $totalStudents!==1?'s':'' ?></div>
+    <!-- Toolbar: risk tabs + search -->
+    <div class="toolbar">
+      <div class="seg">
+        <a href="<?= htmlspecialchars(riskUrl('')) ?>"         class="<?= $filterRisk===''?'active':'' ?>">All <span class="n"><?= $allCount ?></span></a>
+        <a href="<?= htmlspecialchars(riskUrl('Low')) ?>"      class="<?= $filterRisk==='Low'?'active':'' ?>">Low <span class="n"><?= $low ?></span></a>
+        <a href="<?= htmlspecialchars(riskUrl('Moderate')) ?>" class="<?= $filterRisk==='Moderate'?'active':'' ?>">Moderate <span class="n"><?= $moderate ?></span></a>
+        <a href="<?= htmlspecialchars(riskUrl('High')) ?>"     class="<?= $filterRisk==='High'?'active':'' ?>">High <span class="n"><?= $high ?></span></a>
+        <a href="<?= htmlspecialchars(riskUrl('Critical')) ?>" class="<?= $filterRisk==='Critical'?'active':'' ?>">Critical <span class="n"><?= $critical ?></span></a>
+      </div>
+      <form method="GET" class="search-form">
+        <?php if($filterRisk!==''): ?><input type="hidden" name="risk" value="<?= htmlspecialchars($filterRisk) ?>"><?php endif; ?>
+        <div class="search-box">
+          <i class="fas fa-search"></i>
+          <input type="text" name="search" placeholder="Search by ID or name…" value="<?= htmlspecialchars($search) ?>">
+        </div>
+        <button type="submit" class="btn-go">Search</button>
+        <?php if($search!==''||$filterRisk!==''): ?><a href="risk-level.php" class="btn-reset">Reset</a><?php endif; ?>
+      </form>
+    </div>
 
     <!-- Table -->
     <div class="table-wrap">
@@ -389,7 +411,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
         </thead>
         <tbody>
           <?php if(empty($pageRows)): ?>
-          <tr class="empty-row"><td colspan="5"><i class="fas fa-users" style="font-size:20px;display:block;margin-bottom:8px;"></i>No students found</td></tr>
+          <tr class="empty-row"><td colspan="5"><i class="fas fa-users"></i>No students found</td></tr>
           <?php else: foreach($pageRows as $s):
               $risk  = getRisk($s['minor_count'], $s['major_count']);
               $minorCount = (int)$s['minor_count'];
@@ -397,7 +419,9 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
           ?>
           <tr>
             <td class="sid"><?= htmlspecialchars($s['student_id']) ?></td>
-            <td class="name"><?= htmlspecialchars($s['full_name']) ?></td>
+            <td>
+              <div class="stu-name"><?= htmlspecialchars($s['full_name']) ?></div>
+            </td>
             <td>
               <div class="tally-wrap">
                 <?php for($i=1;$i<=5;$i++): ?>
@@ -405,6 +429,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
                 <?php endfor; ?>
                 <?php if($minorCount>5): ?><span class="pip-extra minor">+<?= $minorCount-5 ?></span><?php endif; ?>
               </div>
+              <div class="tally-num"><b><?= $minorCount ?></b> minor</div>
             </td>
             <td>
               <div class="tally-wrap">
@@ -413,6 +438,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
                 <?php endfor; ?>
                 <?php if($majorCount>3): ?><span class="pip-extra major">+<?= $majorCount-3 ?></span><?php endif; ?>
               </div>
+              <div class="tally-num"><b><?= $majorCount ?></b> major</div>
             </td>
             <td>
               <span class="risk-badge" style="background:<?= $risk['bg'] ?>;color:<?= $risk['color'] ?>;">
