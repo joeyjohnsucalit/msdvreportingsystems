@@ -100,6 +100,46 @@ if($search){$where.=" AND (s.full_name LIKE ? OR v.student_id LIKE ?)";$params[]
 if($filterCat){$where.=" AND v.category=?";$params[]=$filterCat;}
 if($filterStatus){$where.=" AND v.status=?";$params[]=$filterStatus;}
 
+// ── Pagination: only one page of violations is loaded at a time (20 per page) ──
+$perPage = 20;
+$page = max(1, (int)($_GET['page'] ?? 1));
+$joins = "FROM violations v
+  JOIN students s ON v.student_id=s.student_id
+  JOIN courses c ON s.course_id=c.id
+  JOIN departments d ON s.department_id=d.id";
+
+$countStmt=$pdo->prepare("SELECT COUNT(*) $joins $where");
+$countStmt->execute($params);
+$totalViolations=(int)$countStmt->fetchColumn();
+$totalPages=max(1,(int)ceil($totalViolations/$perPage));
+
+// Coming from a notification (?highlight=ID): open the page that holds that violation
+$hl=(int)($_GET['highlight']??0);
+if($hl && !isset($_GET['page'])){
+    $hq=$pdo->prepare("SELECT date_submitted FROM violations WHERE id=?");
+    $hq->execute([$hl]); $hd=$hq->fetchColumn();
+    if($hd){
+        $posStmt=$pdo->prepare("SELECT COUNT(*) $joins $where AND (v.date_submitted > ? OR (v.date_submitted = ? AND v.id > ?))");
+        $posStmt->execute(array_merge($params,[$hd,$hd,$hl]));
+        $page=intdiv((int)$posStmt->fetchColumn(),$perPage)+1;
+    }
+}
+if($page>$totalPages) $page=$totalPages;
+$offset=($page-1)*$perPage;   // integers, so they are safe to put in the query
+
+// Link to another page while keeping the current search and filters
+function pageUrl($p){ $q=$_GET; $q['page']=$p; return '?'.http_build_query($q); }
+
+// Page numbers to show: 1 … 4 5 [6] 7 8 … 20
+function pageWindow($cur,$total){
+    $pages=[1,$total];
+    for($i=$cur-2;$i<=$cur+2;$i++){ if($i>1&&$i<$total) $pages[]=$i; }
+    $pages=array_values(array_unique($pages)); sort($pages);
+    $out=[];$prev=0;
+    foreach($pages as $p){ if($p-$prev>1) $out[]='…'; $out[]=$p; $prev=$p; }
+    return $out;
+}
+
 /* LEFT JOIN users so violations still show when the reporter account was deleted.
    reporter_staff_type = Teaching / Non-Teaching (users.staff_type)
    s.profile_photo_path = photo the student uploaded in the enrollment Google Form (image.php?id=N) */
@@ -114,7 +154,7 @@ $stmt=$pdo->prepare("SELECT v.*,s.full_name,s.profile_photo_path,c.name as cours
   JOIN departments d ON s.department_id=d.id
   LEFT JOIN users u ON v.reporter_id=u.id
   LEFT JOIN disciplinary_actions da ON da.violation_id=v.id
-  $where ORDER BY v.date_submitted DESC");
+  $where ORDER BY v.date_submitted DESC, v.id DESC LIMIT $perPage OFFSET $offset");
 $stmt->execute($params);$violations=$stmt->fetchAll();
 
 $highlight=(int)($_GET['highlight']??0);
@@ -207,56 +247,58 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 /* ── CONTENT ── */
 .content { margin-top:60px; padding:28px 32px 40px; flex:1; }
 
-/* Page top */
-.page-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
-.page-top h2 { font-size:22px; font-weight:600; color:var(--text); letter-spacing:-0.4px; margin:0 0 3px; }
-.page-top p  { font-size:13px; color:var(--text-3); margin:0; }
+@keyframes fadeUp { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:none; } }
+@media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
 
 /* Alert banners */
-.alert-banner { border-radius:var(--r-md); padding:12px 16px; font-size:13px; font-weight:500; margin-bottom:16px; display:flex; align-items:center; gap:10px; border:none; }
+.alert-banner { border-radius:var(--r-md); padding:12px 16px; font-size:13px; font-weight:500; margin-bottom:16px; display:flex; align-items:center; gap:10px; border:none; animation:fadeUp .3s ease both; }
 .alert-banner.success { background:#f0fdf4; color:#15803d; }
 .alert-banner.error   { background:#fff0f0; color:#dc2626; }
 .alert-banner i { flex-shrink:0; }
 
-/* Filter bar */
-.filter-bar { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); padding:16px 20px; margin-bottom:20px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+/* ── FILTER BAR ── */
+.filter-bar { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:14px 16px; margin-bottom:16px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; box-shadow:0 1px 2px rgba(16,24,40,.04); animation:fadeUp .35s ease both; }
+.search-wrap { position:relative; flex:1 1 280px; min-width:200px; }
+.search-wrap i { position:absolute; left:14px; top:50%; transform:translateY(-50%); color:var(--text-3); font-size:12px; pointer-events:none; }
 .filter-input, .filter-select {
-    font-size:13px; padding:8px 12px; border-radius:var(--r-sm);
+    font-size:13px; padding:8px 12px; border-radius:10px;
     border:1px solid var(--border); background:#fff; color:var(--text);
     font-family:'Plus Jakarta Sans',sans-serif; outline:none;
-    transition:border-color 0.15s; height:36px;
+    transition:border-color .15s, box-shadow .15s; height:40px;
 }
-.filter-input:focus, .filter-select:focus { border-color:var(--accent); }
-.filter-input { min-width:200px; }
-.filter-select { appearance:none; -webkit-appearance:none; padding-right:28px; cursor:pointer;
+.filter-input:focus, .filter-select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(37,99,235,0.09); }
+.search-wrap .filter-input { width:100%; padding-left:36px; }
+.filter-select { appearance:none; -webkit-appearance:none; padding-right:30px; cursor:pointer; min-width:140px;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239ca3af' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-    background-repeat:no-repeat; background-position:right 8px center; background-color:#fff;
+    background-repeat:no-repeat; background-position:right 11px center; background-color:#fff;
 }
-.filter-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:var(--r-sm); font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all 0.15s; height:36px; border:1px solid; }
+.filter-btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:8px 18px; border-radius:10px; font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all .15s; height:40px; border:1px solid; text-decoration:none; }
 .filter-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-.filter-btn.primary:hover { background:#1d4ed8; }
-.filter-btn.secondary { background:#fff; color:var(--text-2); border-color:var(--border); text-decoration:none; }
-.filter-btn.secondary:hover { background:var(--bg); }
+.filter-btn.primary:hover { filter:brightness(.92); transform:translateY(-1px); }
+.filter-btn.secondary { background:#fff; color:var(--text-2); border-color:var(--border); }
+.filter-btn.secondary:hover { background:var(--bg); color:var(--text); }
 
-/* Count badge */
-.count-badge { font-size:12px; color:var(--text-3); margin-bottom:10px; }
-.count-badge strong { color:var(--text); }
+/* Count */
+.count-badge { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-2); background:var(--surface); border:1px solid var(--border); padding:5px 12px; border-radius:20px; margin-bottom:12px; }
+.count-badge strong { color:var(--text); font-weight:700; }
 
 /* ── TABLE ── */
-.table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; }
-.data-table { width:100%; border-collapse:collapse; font-size:13px; }
-.data-table thead tr { border-bottom:1px solid var(--border); }
-.data-table thead th { padding:11px 16px; font-size:10.5px; font-weight:600; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-3); background:var(--bg); white-space:nowrap; }
-.data-table tbody tr { border-bottom:1px solid var(--border-soft); transition:background 0.1s; }
-.data-table tbody tr:last-child { border-bottom:none; }
-.data-table tbody tr:hover { background:#fafbfc; }
-.data-table tbody tr.highlight { background:#fffbeb; }
-.data-table td { padding:13px 16px; color:var(--text); vertical-align:middle; }
-.data-table td.sid { font-weight:600; font-family:monospace; font-size:12.5px; color:var(--accent); letter-spacing:0.2px; }
-.data-table td.name { font-weight:500; }
+.table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden; box-shadow:0 1px 2px rgba(16,24,40,.04); animation:fadeUp .45s ease both; }
+.table-scroll { overflow-x:auto; }
+.data-table { width:100%; min-width:900px; border-collapse:separate; border-spacing:0; font-size:13px; }
+.data-table thead th { padding:13px 18px; font-size:10.5px; font-weight:600; letter-spacing:.7px; text-transform:uppercase; color:var(--text-3); background:var(--bg); white-space:nowrap; text-align:left; border-bottom:1px solid var(--border); }
+.data-table tbody td { padding:13px 18px; color:var(--text); vertical-align:middle; border-bottom:1px solid var(--border-soft); transition:background .12s; }
+.data-table tbody tr:last-child td { border-bottom:none; }
+.data-table tbody tr:hover td { background:color-mix(in srgb, var(--accent) 9%, var(--surface)); }
+.data-table tbody tr.highlight td { background:color-mix(in srgb, #f59e0b 14%, var(--surface)); }
+.data-table td.sid { font-weight:600; font-family:monospace; font-size:12.5px; color:var(--accent); letter-spacing:.2px; white-space:nowrap; }
+.data-table td.name { font-weight:600; }
 .data-table td.muted { color:var(--text-2); }
-.data-table td.time { color:var(--text-2); white-space:nowrap; }
-.empty-row td { padding:40px 16px; text-align:center; color:var(--text-3); font-size:13px; }
+.data-table td.viol { color:var(--text-2); max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.data-table td.date { color:var(--text-2); white-space:nowrap; }
+.data-table td.time { color:var(--text-3); white-space:nowrap; font-size:12.5px; }
+.data-table td.actions { text-align:right; white-space:nowrap; }
+.empty-row td { padding:56px 16px !important; text-align:center; color:var(--text-3); font-size:13px; }
 
 /* Highlight the matching violation with a border only */
 tr.violation-highlight > td {
@@ -264,17 +306,23 @@ tr.violation-highlight > td {
     border-top: 1px solid #0030b3 !important;
     border-bottom: 1px solid #0030b3 !important;
 }
+tr.violation-highlight > td:first-child { border-left: 1px solid #0030b3 !important; }
+tr.violation-highlight > td:last-child  { border-right: 1px solid #0030b3 !important; }
 
-tr.violation-highlight > td:first-child {
-    border-left: 1px solid #0030b3 !important;
-}
+/* ── TABLE FOOTER + PAGINATION (colors come from the theme variables) ── */
+.table-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:14px 18px; background:var(--bg); border-top:1px solid var(--border); }
+.foot-info { font-size:12.5px; color:var(--text-3); }
+.foot-info strong { color:var(--text); font-weight:600; }
+.pager { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.pg-btn { min-width:36px; height:36px; padding:0 11px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--border); border-radius:10px; background:var(--surface); color:var(--text-2); font-size:13px; font-weight:600; text-decoration:none; transition:all .15s; }
+.pg-btn:hover { background:var(--accent-light); color:var(--accent); border-color:var(--accent); transform:translateY(-1px); }
+.pg-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent); pointer-events:none; }
+.pg-btn.disabled { opacity:.4; pointer-events:none; }
+.pg-gap { color:var(--text-3); padding:0 4px; font-size:13px; }
 
-tr.violation-highlight > td:last-child {
-    border-right: 1px solid #0030b3 !important;
-}
-
-/* Mini badge */
-.mini-badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px; font-size:10.5px; font-weight:600; }
+/* Badges */
+.mini-badge { display:inline-flex; align-items:center; padding:3px 10px; border-radius:20px; font-size:11px; font-weight:600; }
+.data-table .mini-badge::before { content:''; width:6px; height:6px; border-radius:50%; background:currentColor; margin-right:6px; }
 .mini-badge.minor     { background:#eff4ff; color:#2563eb; }
 .mini-badge.major     { background:#fff0f0; color:#dc2626; }
 .mini-badge.completed { background:#f0fdf4; color:#16a34a; }
@@ -286,29 +334,32 @@ tr.violation-highlight > td:last-child {
 .mini-badge.no_match  { background:#fff0f0; color:#dc2626; }
 
 /* Action btn */
-.view-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:var(--r-sm); font-size:12px; font-weight:500; border:1px solid var(--border); background:#fff; color:var(--text-2); cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; transition:all 0.15s; }
-.view-btn:hover { background:var(--accent-light); color:var(--accent); border-color:#c7d7f8; }
+.view-btn { display:inline-flex; align-items:center; gap:6px; padding:7px 13px; border-radius:var(--r-sm); font-size:12px; font-weight:500; border:1px solid var(--border); background:var(--surface); color:var(--text-2); cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; transition:all .15s; }
+.view-btn:hover { background:var(--accent-light); color:var(--accent); border-color:var(--accent); transform:translateY(-1px); }
 
 /* ── MODALS ── */
-.modal-content { border:1px solid var(--border); border-radius:var(--r-lg); box-shadow:0 16px 48px rgba(0,0,0,0.12); font-family:'Plus Jakarta Sans',sans-serif; overflow:hidden; }
-.modal-header { padding:20px 24px 16px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; justify-content:space-between; }
-.modal-header .modal-title { font-size:16px; font-weight:600; color:var(--text); letter-spacing:-0.2px; }
+.modal-content { border:1px solid var(--border); border-radius:var(--r-lg); box-shadow:0 20px 56px rgba(0,0,0,0.16); font-family:'Plus Jakarta Sans',sans-serif; overflow:hidden; }
+.modal-header { padding:18px 24px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; justify-content:space-between; }
+.modal-header .modal-title { font-size:16px; font-weight:600; color:var(--text); letter-spacing:-0.2px; display:flex; align-items:center; gap:10px; }
+.modal-header .modal-title .mt-ic { width:32px; height:32px; border-radius:10px; background:var(--accent-light); color:var(--accent); display:inline-flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; }
+.modal-header.danger-head .modal-title .mt-ic { background:#fee2e2; color:#dc2626; }
 .modal-header.danger-head { background:#fff0f0; }
 .modal-header.danger-head .modal-title { color:#dc2626; }
 .modal-header .btn-close { opacity:0.4; }
 .modal-header .btn-close:hover { opacity:0.7; }
-.modal-body { padding:20px 24px; }
+.modal-body { padding:22px 24px; }
 .modal-footer { padding:14px 24px; border-top:1px solid var(--border-soft); display:flex; justify-content:flex-end; gap:8px; background:#fafbfc; }
 
 /* Form elements inside modals */
 .f-group { margin-bottom:16px; }
 .f-group:last-child { margin-bottom:0; }
 .f-label { display:block; font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px; }
-.f-input { width:100%; padding:9px 12px; border-radius:var(--r-sm); border:1px solid var(--border); background:#fff; color:var(--text); font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; outline:none; transition:border-color 0.15s; box-sizing:border-box; }
-.f-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(37,99,235,0.08); }
+.f-input { width:100%; padding:10px 12px; border-radius:var(--r-sm); border:1px solid var(--border); background:#fff; color:var(--text); font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; outline:none; transition:border-color 0.15s, box-shadow .15s; box-sizing:border-box; }
+.f-input:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(37,99,235,0.09); }
 
 /* Modal buttons */
 .m-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 18px; border-radius:var(--r-sm); font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all 0.15s; border:1px solid; }
+.m-btn:hover { transform:translateY(-1px); }
 .m-btn.ghost  { background:#fff; color:var(--text-2); border-color:var(--border); }
 .m-btn.ghost:hover { background:var(--bg); }
 .m-btn.danger { background:#dc2626; color:#fff; border-color:#dc2626; }
@@ -317,28 +368,67 @@ tr.violation-highlight > td:last-child {
 .m-btn.primary:hover { background:#1d4ed8; }
 .m-btn.success { background:#16a34a; color:#fff; border-color:#16a34a; }
 .m-btn.success:hover { background:#15803d; }
-.m-btn:disabled { opacity:0.6; cursor:not-allowed; }
+.m-btn:disabled { opacity:0.6; cursor:not-allowed; transform:none; }
 
-/* View modal info grid */
-.info-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; margin-bottom:20px; }
-.info-cell { padding:11px 14px; border-bottom:1px solid var(--border-soft); }
-.info-cell:nth-last-child(-n+2) { border-bottom:none; }
-.info-key { font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-3); margin-bottom:3px; }
-.info-val { font-size:13.5px; color:var(--text); font-weight:500; }
+/* View modal info grid (1px gap lines between cells, works with column spans) */
+.info-grid { display:grid; grid-template-columns:1fr 1fr; gap:1px; background:var(--border); border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; margin-bottom:22px; }
+.info-cell { padding:12px 16px; background:var(--surface); }
+.info-key { font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-3); margin-bottom:4px; }
+.info-val { font-size:13.5px; color:var(--text); font-weight:500; line-height:1.45; }
 .info-val.sid-val { font-family:monospace; color:var(--accent); letter-spacing:0.5px; }
 
 /* View modal section label */
 .sec-lbl { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-3); margin-bottom:10px; }
+.att-label { font-size:11px; font-weight:600; color:var(--text-3); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px; }
+
+/* ── VIOLATION DETAILS (view modal) ── */
+.vv-hero { display:flex; align-items:center; gap:16px; padding:16px 18px; border:1px solid var(--border); border-radius:var(--r-md); background:var(--accent-light); margin-bottom:16px; flex-wrap:wrap; }
+.vv-ini { width:56px; height:56px; border-radius:50%; background:var(--accent); color:#fff; font-size:19px; font-weight:600; letter-spacing:.5px; display:flex; align-items:center; justify-content:center; flex-shrink:0; box-shadow:0 6px 16px rgba(37,99,235,.25); }
+.vv-hero-main { flex:1; min-width:200px; }
+.vv-name { font-size:18px; font-weight:600; letter-spacing:-0.3px; line-height:1.25; }
+.vv-id { font-family:monospace; font-size:12.5px; color:var(--accent); letter-spacing:.4px; margin:2px 0 8px; }
+.vv-tags { display:flex; gap:6px; flex-wrap:wrap; }
+.vv-when { text-align:right; }
+.vv-when .info-val { font-size:13px; }
+.vv-grid { display:grid; grid-template-columns:2fr 1fr; gap:14px; margin-bottom:22px; }
+.vv-card { border:1px solid var(--border); border-radius:var(--r-md); padding:16px 18px; background:var(--surface); }
+.vv-card .sec-lbl { display:flex; align-items:center; gap:7px; }
+.vv-title { font-size:15px; font-weight:600; color:var(--text); line-height:1.4; margin-bottom:6px; }
+.vv-desc { font-size:13px; color:var(--text-2); line-height:1.65; margin:0; white-space:pre-wrap; }
+.vv-foot { margin-top:14px; padding-top:12px; border-top:1px solid var(--border-soft); display:flex; align-items:center; justify-content:space-between; gap:10px; flex-wrap:wrap; }
+.vv-foot .info-val { font-size:13px; }
+.vv-list { display:flex; flex-direction:column; gap:12px; }
+.vv-row { display:flex; justify-content:space-between; align-items:center; gap:10px; font-size:13px; }
+.vv-row .k { color:var(--text-3); font-size:11.5px; font-weight:600; text-transform:uppercase; letter-spacing:.4px; }
+.vv-row .v { color:var(--text); font-weight:500; text-align:right; }
+.att-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; }
+.att-card { border:1px solid var(--border); border-radius:var(--r-md); padding:12px; background:var(--surface); }
+.att-card .att-label { margin-bottom:8px; }
+.att-card .media-box { min-height:120px; }
+.danger-icon { width:56px; height:56px; border-radius:50%; background:#fff0f0; color:#dc2626; display:flex; align-items:center; justify-content:center; font-size:22px; margin:0 auto 14px; }
 
 /* Evidence / image areas */
-.media-box { border:1px solid var(--border); border-radius:var(--r-md); padding:12px; background:var(--bg); min-height:80px; display:flex; align-items:center; justify-content:center; }
+.media-box { border:1px dashed #d5d9e0; border-radius:var(--r-md); padding:12px; background:#fafbfc; min-height:110px; display:flex; align-items:center; justify-content:center; }
 .media-box img { max-height:180px; max-width:100%; border-radius:var(--r-sm); object-fit:contain; }
-.media-box .no-media { font-size:12px; color:var(--text-3); }
+.media-box .no-media { font-size:12px; color:var(--text-3); text-align:center; }
 
 /* Face verification side-by-side */
 .face-compare { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
 .face-compare .media-box { min-height:240px; }
 .face-compare .media-box img { max-height:240px; }
+
+@media (max-width: 768px) {
+    .content { padding:20px 16px 32px; }
+    .filter-select { flex:1 1 140px; }
+    .face-compare { grid-template-columns:1fr; }
+    .vv-grid { grid-template-columns:1fr; }
+    .att-grid { grid-template-columns:1fr 1fr; }
+    .vv-when { text-align:left; }
+    .table-foot { justify-content:center; text-align:center; padding:10px 12px; }
+    .foot-info  { width:100%; }
+    .pager      { justify-content:center; }
+    .pg-btn     { min-width:32px; height:32px; padding:0 8px; font-size:12px; }
+}
 </style>
 </head>
 <body>
@@ -425,7 +515,10 @@ tr.violation-highlight > td:last-child {
 
     <!-- Filter bar -->
     <form method="GET" class="filter-bar">
-      <input type="text" name="search" class="filter-input" placeholder="Search by name or ID…" value="<?= htmlspecialchars($search) ?>">
+      <div class="search-wrap">
+        <i class="fas fa-search"></i>
+        <input type="text" name="search" class="filter-input" placeholder="Search by name or ID…" value="<?= htmlspecialchars($search) ?>">
+      </div>
       <select name="category" class="filter-select">
         <option value="">All Types</option>
         <option value="minor"  <?=$filterCat==='minor' ?'selected':''?>>Minor</option>
@@ -438,14 +531,15 @@ tr.violation-highlight > td:last-child {
         <option value="completed" <?=$filterStatus==='completed'?'selected':''?>>Completed</option>
       </select>
       <button type="submit" class="filter-btn primary"><i class="fas fa-search" style="font-size:11px;"></i> Search</button>
-      <a href="violation-records.php" class="filter-btn secondary">Reset</a>
+      <a href="violation-records.php" class="filter-btn secondary"><i class="fas fa-rotate-left" style="font-size:11px;"></i> Reset</a>
     </form>
 
     <!-- Count -->
-    <div class="count-badge">Showing <strong><?= count($violations) ?></strong> violation<?= count($violations)!==1?'s':'' ?></div>
+    <div class="count-badge"><strong><?= $totalViolations ?></strong> violation<?= $totalViolations!==1?'s':'' ?> found</div>
 
     <!-- Table -->
     <div class="table-wrap">
+      <div class="table-scroll">
       <table class="data-table">
         <thead>
           <tr>
@@ -456,12 +550,12 @@ tr.violation-highlight > td:last-child {
             <th>Date</th>
             <th>Time</th>
             <th>Status</th>
-            <th style="width:80px;"></th>
+            <th style="width:90px;"></th>
           </tr>
         </thead>
         <tbody>
           <?php if(empty($violations)): ?>
-          <tr class="empty-row"><td colspan="8"><i class="fas fa-list" style="font-size:20px;display:block;margin-bottom:8px;"></i>No violations found</td></tr>
+          <tr class="empty-row"><td colspan="8"><i class="fas fa-list" style="font-size:22px;display:block;margin-bottom:8px;"></i>No violations found</td></tr>
           <?php else: foreach($violations as $v):
             $rowHighlight=($highlight&&$highlight==$v['id'])?'highlight':'';
           ?>
@@ -469,15 +563,33 @@ tr.violation-highlight > td:last-child {
             <td class="sid"><?= htmlspecialchars($v['student_id']) ?></td>
             <td class="name"><?= htmlspecialchars($v['full_name']) ?></td>
             <td><span class="mini-badge <?= $v['category'] ?>"><?= ucfirst($v['category']) ?></span></td>
-            <td class="muted"><?= htmlspecialchars($v['violation']) ?></td>
-            <td class="muted"><?= date('M d, Y',strtotime($v['date_submitted'])) ?></td>
+            <td class="viol" title="<?= htmlspecialchars($v['violation']) ?>"><?= htmlspecialchars($v['violation']) ?></td>
+            <td class="date"><?= date('M d, Y',strtotime($v['date_submitted'])) ?></td>
             <td class="time"><?= date('h:i A',strtotime($v['date_submitted'])) ?></td>
             <td><span class="mini-badge <?= $v['status'] ?>"><?= ucfirst($v['status']) ?></span></td>
-            <td><button class="view-btn" onclick='openViolationView(<?= json_encode($v, JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP|JSON_HEX_TAG) ?>)'><i class="fas fa-eye" style="font-size:11px;"></i> View</button></td>
+            <td class="actions"><button class="view-btn" onclick='openViolationView(<?= json_encode($v, JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP|JSON_HEX_TAG) ?>)'><i class="fas fa-eye" style="font-size:11px;"></i> View</button></td>
           </tr>
           <?php endforeach; endif; ?>
         </tbody>
       </table>
+      </div>
+
+      <div class="table-foot">
+        <div class="foot-info">
+          <?php if($totalViolations>0): ?>Showing <strong><?= $offset+1 ?>–<?= $offset+count($violations) ?></strong> of <strong><?= $totalViolations ?></strong> violation<?= $totalViolations!==1?'s':'' ?> · Page <strong><?= $page ?></strong> of <strong><?= $totalPages ?></strong>
+          <?php else: ?>No violations to show<?php endif; ?>
+        </div>
+        <div class="pager">
+          <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pageUrl(1)) ?>" aria-label="First page"><i class="fas fa-angles-left" style="font-size:10px;"></i></a>
+          <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pageUrl($page-1)) ?>" aria-label="Previous page"><i class="fas fa-chevron-left" style="font-size:10px;"></i></a>
+          <?php foreach(pageWindow($page,$totalPages) as $p): ?>
+            <?php if($p==='…'): ?><span class="pg-gap">…</span>
+            <?php else: ?><a class="pg-btn <?= $p==$page?'active':'' ?>" href="<?= htmlspecialchars(pageUrl($p)) ?>"><?= $p ?></a><?php endif; ?>
+          <?php endforeach; ?>
+          <a class="pg-btn <?= $page>=$totalPages?'disabled':'' ?>" href="<?= $page>=$totalPages?'#':htmlspecialchars(pageUrl($page+1)) ?>" aria-label="Next page"><i class="fas fa-chevron-right" style="font-size:10px;"></i></a>
+          <a class="pg-btn <?= $page>=$totalPages?'disabled':'' ?>" href="<?= $page>=$totalPages?'#':htmlspecialchars(pageUrl($totalPages)) ?>" aria-label="Last page"><i class="fas fa-angles-right" style="font-size:10px;"></i></a>
+        </div>
+      </div>
     </div>
 
   </div><!-- /content -->
@@ -488,7 +600,7 @@ tr.violation-highlight > td:last-child {
   <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <span class="modal-title">Violation Details</span>
+        <span class="modal-title"><span class="mt-ic"><i class="fas fa-file-circle-exclamation"></i></span>Violation Details</span>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body" id="vvBody">
@@ -510,11 +622,12 @@ tr.violation-highlight > td:last-child {
       <input type="hidden" name="action" value="delete_violation">
       <input type="hidden" name="violation_id" id="delViolID">
       <div class="modal-header danger-head">
-        <span class="modal-title"><i class="fas fa-exclamation-triangle" style="margin-right:8px;font-size:14px;"></i>Delete Violation</span>
+        <span class="modal-title"><span class="mt-ic"><i class="fas fa-trash"></i></span>Delete Violation</span>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <p style="font-size:13.5px;color:var(--text-2);margin-bottom:16px;line-height:1.6;">This will permanently remove the violation record. This action cannot be undone.</p>
+        <div class="danger-icon"><i class="fas fa-trash-can"></i></div>
+        <p style="font-size:13.5px;color:var(--text-2);margin-bottom:18px;line-height:1.6;text-align:center;">This will permanently remove the violation record. This action cannot be undone.</p>
         <div class="f-group" style="margin:0;">
           <label class="f-label">Deletion Password</label>
           <input type="password" name="del_password" class="f-input" placeholder="Enter deletion password…" required>
@@ -533,7 +646,7 @@ tr.violation-highlight > td:last-child {
   <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
       <div class="modal-header">
-        <span class="modal-title">Verify Face</span>
+        <span class="modal-title"><span class="mt-ic"><i class="fas fa-user-check"></i></span>Verify Face</span>
         <button type="button" class="btn-close" onclick="backToView('faceModal')"></button>
       </div>
       <div class="modal-body">
@@ -554,7 +667,7 @@ tr.violation-highlight > td:last-child {
 <div class="modal fade" id="evidenceModal" data-bs-backdrop="static" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
-      <div class="modal-header"><span class="modal-title">Download Evidence</span></div>
+      <div class="modal-header"><span class="modal-title"><span class="mt-ic"><i class="fas fa-download"></i></span>Download Evidence</span></div>
       <div class="modal-body">
         <p style="font-size:13.5px;color:var(--text-2);line-height:1.6;margin-bottom:10px;">
           Download the evidence to free up server storage. It will be saved as:</p>
@@ -572,7 +685,7 @@ tr.violation-highlight > td:last-child {
 <div class="modal fade" id="skipConfirmModal" data-bs-backdrop="static" tabindex="-1">
   <div class="modal-dialog modal-dialog-centered">
     <div class="modal-content">
-      <div class="modal-header danger-head"><span class="modal-title">Are you sure?</span></div>
+      <div class="modal-header danger-head"><span class="modal-title"><span class="mt-ic"><i class="fas fa-exclamation-triangle"></i></span>Are you sure?</span></div>
       <div class="modal-body">
         <p style="font-size:13.5px;color:var(--text-2);line-height:1.6;margin:0;">
           Are you sure you don't want to download the evidence? It will be permanently removed from the server.</p>
@@ -596,6 +709,11 @@ document.addEventListener('DOMContentLoaded',function(){
 
 const ROLE_LABELS       = { teacher:'Instructor', csu:'CSU', jassu:'JASSU', nurse:'Nurse' };
 const STAFF_TYPE_LABELS = { teaching:'Teaching', non_teaching:'Non-Teaching' };
+
+function initialsOf(name){
+    const w = String(name||'').replace(/,/g,' ').split(/\s+/).filter(Boolean);
+    return (((w[0]||'')[0]||'') + ((w[1]||'')[0]||'')).toUpperCase() || '?';
+}
 
 /* Renders the violation details into the View modal (does not show the modal) */
 function renderViolation(v){
@@ -626,74 +744,49 @@ function renderViolation(v){
         : '—';
 
     document.getElementById('vvBody').innerHTML = `
-        <div class="info-grid" style="grid-template-columns:1fr 1fr 1fr;">
-          <div class="info-cell">
-            <div class="info-key">Student ID</div>
-            <div class="info-val sid-val">${escHtml(v.student_id)}</div>
+        <div class="vv-hero">
+          <div class="vv-ini">${escHtml(initialsOf(v.full_name))}</div>
+          <div class="vv-hero-main">
+            <div class="vv-name">${escHtml(v.full_name)}</div>
+            <div class="vv-id">${escHtml(v.student_id)}</div>
+            <div class="vv-tags">
+              <span class="mini-badge ${v.category}">${v.category.charAt(0).toUpperCase()+v.category.slice(1)}</span>
+              <span class="mini-badge ${v.status}">${v.status.charAt(0).toUpperCase()+v.status.slice(1)}</span>
+              ${faceBadge}
+            </div>
           </div>
-          <div class="info-cell" style="grid-column:span 2;">
-            <div class="info-key">Full Name</div>
-            <div class="info-val">${escHtml(v.full_name)}</div>
-          </div>
-          <div class="info-cell">
-            <div class="info-key">Category</div>
-            <div class="info-val"><span class="mini-badge ${v.category}">${v.category.charAt(0).toUpperCase()+v.category.slice(1)}</span></div>
-          </div>
-          <div class="info-cell" style="grid-column:span 2;">
-            <div class="info-key">Violation</div>
-            <div class="info-val">${escHtml(v.violation)}</div>
-          </div>
-          <div class="info-cell" style="grid-column:span 3;">
-            <div class="info-key">Description</div>
-            <div class="info-val" style="font-weight:400;color:var(--text-2);">${escHtml(v.description||'—')}</div>
-          </div>
-          <div class="info-cell">
-            <div class="info-key">Status</div>
-            <div class="info-val"><span class="mini-badge ${v.status}">${v.status.charAt(0).toUpperCase()+v.status.slice(1)}</span></div>
-          </div>
-          <div class="info-cell">
+          <div class="vv-when">
             <div class="info-key">Date Submitted</div>
             <div class="info-val">${escHtml(v.date_submitted)}</div>
           </div>
-          <div class="info-cell">
-            <div class="info-key">Sanction</div>
-            <div class="info-val">${escHtml(v.sanction||'—')}</div>
+        </div>
+
+        <div class="vv-grid">
+          <div class="vv-card">
+            <div class="sec-lbl"><i class="fas fa-triangle-exclamation"></i>Violation</div>
+            <div class="vv-title">${escHtml(v.violation)}</div>
+            <p class="vv-desc">${escHtml(v.description||'No description provided.')}</p>
+            <div class="vv-foot">
+              <div class="info-key" style="margin:0;">Sanction</div>
+              <div class="info-val">${escHtml(v.sanction||'—')}</div>
+            </div>
           </div>
-          <div class="info-cell">
-            <div class="info-key">Reporter</div>
-            <div class="info-val">${escHtml(v.reporter_name)}</div>
-          </div>
-          <div class="info-cell">
-            <div class="info-key">Staff Type</div>
-            <div class="info-val">${staffType}</div>
-          </div>
-          <div class="info-cell">
-            <div class="info-key">Reporter Role</div>
-            <div class="info-val">${escHtml(roleLabel)}</div>
-          </div>
-          <div class="info-cell" style="grid-column:span 3;">
-            <div class="info-key">Face Verification</div>
-            <div class="info-val">${faceBadge}</div>
+          <div class="vv-card">
+            <div class="sec-lbl"><i class="fas fa-user-tie"></i>Reported By</div>
+            <div class="vv-list">
+              <div class="vv-row"><span class="k">Name</span><span class="v">${escHtml(v.reporter_name)}</span></div>
+              <div class="vv-row"><span class="k">Role</span><span class="v">${escHtml(roleLabel)}</span></div>
+              <div class="vv-row"><span class="k">Staff Type</span><span class="v">${staffType}</span></div>
+            </div>
           </div>
         </div>
+
         <div class="sec-lbl">Attachments</div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;">
-          <div>
-            <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Evidence</div>
-            ${evidence}
-          </div>
-          <div>
-            <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Face Capture</div>
-            ${face}
-          </div>
-          <div>
-            <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">E-Signature</div>
-            ${sig}
-          </div>
-          <div>
-            <div style="font-size:11px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:6px;">Profile Photo</div>
-            ${profile}
-          </div>
+        <div class="att-grid">
+          <div class="att-card"><div class="att-label">Evidence</div>${evidence}</div>
+          <div class="att-card"><div class="att-label">Face Capture</div>${face}</div>
+          <div class="att-card"><div class="att-label">E-Signature</div>${sig}</div>
+          <div class="att-card"><div class="att-label">Profile Photo</div>${profile}</div>
         </div>`;
 
     document.getElementById('vvDeleteBtn').onclick = () =>
