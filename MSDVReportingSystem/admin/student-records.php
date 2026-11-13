@@ -247,17 +247,17 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden; box-shadow:0 1px 2px rgba(16,24,40,.04); animation:fadeUp .5s ease both; }
 .table-scroll { overflow-x:auto; }
 .data-table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; min-width:880px; }
-.data-table thead th { padding:13px 18px; font-size:10.5px; font-weight:700; letter-spacing:.7px; text-transform:uppercase; color:var(--text-3); background:#fafbfc; white-space:nowrap; text-align:left; border-bottom:1px solid var(--border); }
+.data-table thead th { padding:13px 18px; font-size:10.5px; font-weight:700; letter-spacing:.7px; text-transform:uppercase; color:var(--text-3); background:var(--bg); white-space:nowrap; text-align:left; border-bottom:1px solid var(--border); }
 .data-table tbody td { padding:12px 18px; color:var(--text); vertical-align:middle; border-bottom:1px solid var(--border-soft); transition:background .12s; }
 .data-table tbody tr:last-child td { border-bottom:none; }
-.data-table tbody tr:hover td { background:#f8faff; }
+.data-table tbody tr:hover td { background:color-mix(in srgb, var(--accent) 9%, var(--surface)); }
 .data-table td.muted { color:var(--text-2); }
 .data-table td.actions { text-align:right; white-space:nowrap; }
 
 /* Student cell */
 .sid { font-family:monospace; font-size:12.5px; color:var(--accent); letter-spacing:.3px; white-space:nowrap; }
 .fname { font-weight:600; color:var(--text); min-width:200px; }
-.avatar { width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,#dbe7ff,#eff4ff); color:var(--accent); font-size:12px; font-weight:700; letter-spacing:.3px; display:flex; align-items:center; justify-content:center; flex-shrink:0; border:1px solid #cfdcff; }
+.avatar { width:38px; height:38px; border-radius:50%; background:var(--accent-light); color:var(--accent); font-size:12px; font-weight:700; letter-spacing:.3px; display:flex; align-items:center; justify-content:center; flex-shrink:0; border:1px solid #cfdcff; }
 .stu-name { font-weight:600; color:var(--text); line-height:1.25; }
 .stu-id   { font-family:monospace; font-size:11.5px; color:var(--text-3); margin-top:2px; letter-spacing:.2px; }
 
@@ -279,7 +279,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 /* ── TABLE FOOTER + PAGINATION ── */
 .table-foot {
     display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
-    padding:14px 18px; background:#fafbfc; border-top:1px solid var(--border);
+    padding:14px 18px; background:var(--bg); border-top:1px solid var(--border);
 }
 .foot-info { font-size:12.5px; color:var(--text-3); }
 .foot-info strong { color:var(--text); font-weight:600; }
@@ -294,7 +294,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
     transition:all .15s;
 }
 .pg-btn:hover { background:var(--accent-light); color:var(--accent); border-color:var(--accent); transform:translateY(-1px); }
-.pg-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 4px 12px rgba(37,99,235,.35); pointer-events:none; }
+.pg-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent); pointer-events:none; }
 .pg-btn.disabled { opacity:.4; pointer-events:none; }
 .pg-gap { color:var(--text-3); padding:0 4px; font-size:13px; }
 
@@ -311,7 +311,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .modal-footer { padding:14px 24px; border-top:1px solid var(--border-soft); display:flex; justify-content:flex-end; gap:8px; background:var(--bg); }
 
 /* Profile hero (student modal) */
-.profile-hero { display:flex; align-items:center; gap:18px; padding:18px; border:1px solid var(--border); border-radius:var(--r-md); background:linear-gradient(135deg, var(--accent-light), var(--surface) 70%); margin-bottom:16px; }
+.profile-hero { display:flex; align-items:center; gap:18px; padding:18px; border:1px solid var(--border); border-radius:var(--r-md); background:var(--accent-light); margin-bottom:16px; }
 .hero-photo, .hero-initials { width:92px; height:92px; border-radius:20px; flex-shrink:0; }
 .hero-photo { object-fit:cover; border:3px solid var(--surface); box-shadow:0 6px 18px rgba(0,0,0,0.14); }
 .hero-initials { background:var(--accent); color:#fff; font-size:30px; font-weight:600; letter-spacing:1px; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 18px rgba(0,0,0,0.14); }
