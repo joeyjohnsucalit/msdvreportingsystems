@@ -5,6 +5,7 @@ session_start();
 date_default_timezone_set('Asia/Manila');
 
 require_once '../db/connection.php';
+require_once '../db/image_storage.php';
 
 // Keep MySQL/TiDB date functions (NOW(), CURRENT_TIMESTAMP) in Philippine time
 // for this database connection.
@@ -27,9 +28,12 @@ $notifList = $notifStmt->fetchAll();
 if(isset($_POST['action'])&&$_POST['action']==='delete_violation'){
     $vid=(int)$_POST['violation_id'];$pass=trim($_POST['del_password']);
     if($pass===DELETE_PASSWORD){
+        $ip=$pdo->prepare("SELECT evidence_path,face_capture_path,signature_path FROM violations WHERE id=?");
+        $ip->execute([$vid]);$imgPaths=$ip->fetch(PDO::FETCH_NUM) ?: [];
         $pdo->prepare("DELETE FROM disciplinary_actions WHERE violation_id=?")->execute([$vid]);
         $pdo->prepare("DELETE FROM appeals WHERE violation_id=?")->execute([$vid]);
         $pdo->prepare("DELETE FROM violations WHERE id=?")->execute([$vid]);
+        foreach($imgPaths as $imgPath){ removeStoredImage($pdo, $imgPath ?: null); }
         $_SESSION['msg']='Violation deleted successfully.';
     }else{$_SESSION['err']='Incorrect deletion password.';}
     header('Location: violation-records.php');exit;
@@ -37,17 +41,12 @@ if(isset($_POST['action'])&&$_POST['action']==='delete_violation'){
 
 /* ───────────────────────────────────────────────
    FACE VERIFICATION + EVIDENCE HANDLERS
+   Images live in the stored_images table (db/image_storage.php); a violation keeps
+   a path like image.php?id=42. Old records may still have uploads/... file paths,
+   which the helper functions also handle.
    ─────────────────────────────────────────────── */
 
-// Resolve a stored relative path to a real file, only if it sits inside the project root.
-function safeFile($rel){
-    if(!$rel) return null;
-    $root = realpath(__DIR__.'/..');
-    $full = realpath($root.'/'.ltrim($rel,'/'));
-    return ($full && strpos($full,$root.DIRECTORY_SEPARATOR)===0 && is_file($full)) ? $full : null;
-}
-
-// Save face verification result (match / no_match) and delete the face capture file
+// Save face verification result (match / no_match) and delete the face capture image
 if(($_POST['action']??'')==='face_result'){
     header('Content-Type: application/json');
     $vid = (int)$_POST['violation_id'];
@@ -57,30 +56,39 @@ if(($_POST['action']??'')==='face_result'){
     if(!$row){ echo json_encode(['ok'=>false,'error'=>'Violation not found']); exit; }
     // Match OR not match: the captured face image is always deleted to save storage.
     // The result (match / no_match) stays saved so the admin can still see it.
-    if($f = safeFile($row['face_capture_path'])) @unlink($f);
+    removeStoredImage($pdo, $row['face_capture_path']);
     $pdo->prepare("UPDATE violations SET face_match=?, face_capture_path=NULL, face_verified_at=NOW() WHERE id=?")->execute([$result,$vid]);
     echo json_encode(['ok'=>true]); exit;
 }
 
-// Stream the evidence file so the browser can download it
+// File type of the evidence (used to name the download)
+if(isset($_GET['evidence_info'])){
+    header('Content-Type: application/json');
+    $q = $pdo->prepare("SELECT evidence_path FROM violations WHERE id=?");
+    $q->execute([(int)$_GET['evidence_info']]); $row = $q->fetch();
+    $img = $row ? loadStoredImage($pdo, $row['evidence_path'], false) : null;
+    echo json_encode(['ok'=>(bool)$img, 'ext'=>$img ? storedImageExt($img['mime']) : 'jpg']); exit;
+}
+
+// Stream the evidence image so the browser can download it
 if(isset($_GET['download_evidence'])){
     $q = $pdo->prepare("SELECT evidence_path FROM violations WHERE id=?");
     $q->execute([(int)$_GET['download_evidence']]); $row = $q->fetch();
-    $f = $row ? safeFile($row['evidence_path']) : null;
-    if(!$f){ http_response_code(404); exit; }
-    header('Content-Type: '.(mime_content_type($f) ?: 'application/octet-stream'));
-    header('Content-Length: '.filesize($f));
-    readfile($f); exit;
+    $img = $row ? loadStoredImage($pdo, $row['evidence_path'], true) : null;
+    if(!$img || $img['data']===false || $img['data']===null){ http_response_code(404); exit; }
+    header('Content-Type: '.$img['mime']);
+    header('Content-Length: '.strlen($img['data']));
+    echo $img['data']; exit;
 }
 
-// Delete the evidence file from the server (after download, or after the admin skips)
+// Delete the evidence image from the database (after download, or after the admin skips)
 if(($_POST['action']??'')==='clear_evidence'){
     header('Content-Type: application/json');
     $vid = (int)$_POST['violation_id'];
     $q = $pdo->prepare("SELECT evidence_path FROM violations WHERE id=?");
     $q->execute([$vid]); $row = $q->fetch();
     if($row){
-        if($f = safeFile($row['evidence_path'])) @unlink($f);
+        removeStoredImage($pdo, $row['evidence_path']);
         $pdo->prepare("UPDATE violations SET evidence_path=NULL WHERE id=?")->execute([$vid]);
     }
     echo json_encode(['ok'=>true]); exit;
@@ -94,8 +102,8 @@ if($filterStatus){$where.=" AND v.status=?";$params[]=$filterStatus;}
 
 /* LEFT JOIN users so violations still show when the reporter account was deleted.
    reporter_staff_type = Teaching / Non-Teaching (users.staff_type)
-   has_photo = student uploaded a photo in the enrollment Google Form (image is served by student-photo.php) */
-$stmt=$pdo->prepare("SELECT v.*,s.full_name,(s.profile_photo_path IS NOT NULL AND s.profile_photo_path<>'') AS has_photo,c.name as course_name,d.name as dept_name,
+   s.profile_photo_path = photo the student uploaded in the enrollment Google Form (image.php?id=N) */
+$stmt=$pdo->prepare("SELECT v.*,s.full_name,s.profile_photo_path,c.name as course_name,d.name as dept_name,
     COALESCE(u.full_name,'Deleted user') as reporter_name,
     COALESCE(u.role,'—') as reporter_role,
     u.staff_type as reporter_staff_type,
@@ -600,8 +608,8 @@ function renderViolation(v){
     const sig = v.signature_path
         ? `<div class="media-box"><img src="../${escHtml(v.signature_path)}" alt="Signature" style="max-height:80px;"></div>`
         : `<div class="media-box"><span class="no-media"><i class="fas fa-signature" style="margin-right:6px;"></i>No signature</span></div>`;
-    const profile = Number(v.has_photo)
-        ? `<div class="media-box"><img src="student-photo.php?sid=${encodeURIComponent(v.student_id)}" alt="Profile"></div>`
+    const profile = v.profile_photo_path
+        ? `<div class="media-box"><img src="../${escHtml(v.profile_photo_path)}" alt="Profile"></div>`
         : `<div class="media-box"><span class="no-media"><i class="fas fa-user-circle" style="margin-right:6px;"></i>No profile photo</span></div>`;
 
     // Face verification result
@@ -727,9 +735,7 @@ function setImg(id, path, emptyText){
 
 function openFaceVerify(){
     setImg('fvCapture', CUR.face_capture_path, 'No face capture');
-    document.getElementById('fvProfile').innerHTML = Number(CUR.has_photo)
-        ? `<img src="student-photo.php?sid=${encodeURIComponent(CUR.student_id)}" alt="">`
-        : `<span class="no-media">No profile photo uploaded</span>`;
+    setImg('fvProfile', CUR.profile_photo_path, 'No profile photo uploaded');
     document.getElementById('fvMatch').disabled = false;
     document.getElementById('fvNoMatch').disabled = false;
     swapModal('viewViolationModal', 'faceModal');
@@ -751,6 +757,10 @@ async function submitFace(result){
         CUR.face_match = result;
         CUR.face_capture_path = null;   // file is deleted server-side for both match and not match
         if(CUR.evidence_path){
+            try{
+                const info = await (await fetch('violation-records.php?evidence_info=' + CUR.id)).json();
+                CUR.evidence_ext = info.ext || 'jpg';
+            }catch(e){ CUR.evidence_ext = 'jpg'; }
             document.getElementById('evFileName').textContent = evidenceFileName(CUR);
             swapModal('faceModal', 'evidenceModal');
         } else {
@@ -763,9 +773,9 @@ async function submitFace(result){
     }
 }
 
-// StudentID_ViolationName.ext
+// StudentID_ViolationName.ext   (ext comes from the server: CUR.evidence_ext)
 function evidenceFileName(v){
-    const ext  = (v.evidence_path.split('.').pop() || 'jpg').toLowerCase();
+    const ext  = v.evidence_ext || 'jpg';
     const slug = String(v.violation).replace(/[^a-z0-9]+/gi,'_').replace(/^_+|_+$/g,'');
     return `${v.student_id}_${slug}.${ext}`;
 }
