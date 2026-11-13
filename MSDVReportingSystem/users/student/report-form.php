@@ -271,6 +271,7 @@ if (isset($_GET['get_student'])) {
     exit;
 }
 ?>
+<?php require_once 'theme-mode.php'; ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
