@@ -83,35 +83,9 @@ if($search){$where.=" AND (s.student_id LIKE ? OR s.full_name LIKE ?)";$params[]
 if($filterCourse){$where.=" AND s.course_id=?";$params[]=$filterCourse;}
 if($filterYear){$where.=" AND s.year_level=?";$params[]=$filterYear;}
 if($filterDept){$where.=" AND s.department_id=?";$params[]=$filterDept;}
-// ── Pagination: only one page of students is loaded from the database at a time ──
-$perPage = (int)($_GET['per_page'] ?? 20);
-if(!in_array($perPage, [10,20,50,100], true)) $perPage = 20;
-$page = max(1, (int)($_GET['page'] ?? 1));
-
-// Total number of students matching the current search/filters
-$countStmt=$pdo->prepare("SELECT COUNT(*) FROM students s JOIN courses c ON s.course_id=c.id JOIN departments d ON s.department_id=d.id $where");
-$countStmt->execute($params);
-$totalStudents=(int)$countStmt->fetchColumn();
-$totalPages=max(1,(int)ceil($totalStudents/$perPage));
-if($page>$totalPages) $page=$totalPages;
-$offset=($page-1)*$perPage;   // $perPage and $offset are integers, so they are safe to put in the query
-
 // s.* includes profile_photo_path (a short path like image.php?id=42)
-$stmt=$pdo->prepare("SELECT s.*,c.name as course_name,d.name as dept_name,(SELECT COUNT(*) FROM violations v WHERE v.student_id=s.student_id) as total_violations FROM students s JOIN courses c ON s.course_id=c.id JOIN departments d ON s.department_id=d.id $where ORDER BY s.student_id LIMIT $perPage OFFSET $offset");
+$stmt=$pdo->prepare("SELECT s.*,c.name as course_name,d.name as dept_name,(SELECT COUNT(*) FROM violations v WHERE v.student_id=s.student_id) as total_violations FROM students s JOIN courses c ON s.course_id=c.id JOIN departments d ON s.department_id=d.id $where ORDER BY s.student_id");
 $stmt->execute($params);$students=$stmt->fetchAll();
-
-// Link to another page while keeping the current search and filters
-function pageUrl($p){ $q=$_GET; $q['page']=$p; return '?'.http_build_query($q); }
-
-// Page numbers to show: 1 … 4 5 [6] 7 8 … 20
-function pageWindow($cur,$total){
-    $pages=[1,$total];
-    for($i=$cur-2;$i<=$cur+2;$i++){ if($i>1&&$i<$total) $pages[]=$i; }
-    $pages=array_values(array_unique($pages)); sort($pages);
-    $out=[];$prev=0;
-    foreach($pages as $p){ if($p-$prev>1) $out[]='…'; $out[]=$p; $prev=$p; }
-    return $out;
-}
 function getRiskLevel($t){if($t>=5)return['label'=>'Critical','class'=>'danger','color'=>'#dc2626','bg'=>'#fff0f0'];if($t>=4)return['label'=>'High','class'=>'warning','color'=>'#d97706','bg'=>'#fffbeb'];if($t>=2)return['label'=>'Moderate','class'=>'info','color'=>'#2563eb','bg'=>'#eff4ff'];return['label'=>'Low','class'=>'success','color'=>'#16a34a','bg'=>'#f0fdf4'];}
 ?>
 <?php require_once 'theme-head.php'; ?>
@@ -325,14 +299,6 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .mini-badge.completed { background:#f0fdf4; color:#16a34a; }
 .mini-badge.ongoing   { background:#fffbeb; color:#d97706; }
 .mini-badge.pending   { background:#f4f5f7; color:#6b7280; }
-
-/* ── PAGINATION ── */
-.pager { display:flex; align-items:center; justify-content:center; gap:6px; margin-top:18px; flex-wrap:wrap; }
-.pg-btn { min-width:34px; height:34px; padding:0 10px; display:inline-flex; align-items:center; justify-content:center; border:1px solid var(--border); border-radius:var(--r-sm); background:#fff; color:var(--text-2); font-size:12.5px; font-weight:500; text-decoration:none; transition:all 0.15s; }
-.pg-btn:hover { background:var(--accent-light); color:var(--accent); border-color:#c7d7f8; }
-.pg-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); pointer-events:none; }
-.pg-btn.disabled { opacity:0.4; pointer-events:none; }
-.pg-gap { color:var(--text-3); padding:0 4px; font-size:13px; }
 </style>
 </head>
 <body>
@@ -432,18 +398,12 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
         <option value="">All Years</option>
         <?php for($i=1;$i<=4;$i++): ?><option value="<?=$i?>" <?=$filterYear==$i?'selected':''?>>Year <?=$i?></option><?php endfor; ?>
       </select>
-      <select name="per_page" class="filter-select" title="Rows per page" onchange="this.form.submit()">
-        <?php foreach([10,20,50,100] as $n): ?><option value="<?=$n?>" <?=$perPage==$n?'selected':''?>><?=$n?> per page</option><?php endforeach; ?>
-      </select>
       <button type="submit" class="filter-btn primary"><i class="fas fa-search" style="font-size:11px;"></i> Search</button>
       <a href="student-records.php" class="filter-btn secondary">Reset</a>
     </form>
 
     <!-- Table -->
-    <div class="count-badge">
-      <?php if($totalStudents>0): ?>Showing <strong><?= $offset+1 ?>–<?= $offset+count($students) ?></strong> of <strong><?= $totalStudents ?></strong> student<?= $totalStudents!==1?'s':'' ?>
-      <?php else: ?>Showing <strong>0</strong> students<?php endif; ?>
-    </div>
+    <div class="count-badge">Showing <strong><?= count($students) ?></strong> student<?= count($students)!==1?'s':'' ?></div>
     <div class="table-wrap">
       <table class="data-table">
         <thead>
@@ -479,17 +439,6 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
         </tbody>
       </table>
     </div>
-
-    <?php if($totalPages>1): ?>
-    <div class="pager">
-      <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pageUrl($page-1)) ?>" aria-label="Previous page"><i class="fas fa-chevron-left" style="font-size:10px;"></i></a>
-      <?php foreach(pageWindow($page,$totalPages) as $p): ?>
-        <?php if($p==='…'): ?><span class="pg-gap">…</span>
-        <?php else: ?><a class="pg-btn <?= $p==$page?'active':'' ?>" href="<?= htmlspecialchars(pageUrl($p)) ?>"><?= $p ?></a><?php endif; ?>
-      <?php endforeach; ?>
-      <a class="pg-btn <?= $page>=$totalPages?'disabled':'' ?>" href="<?= $page>=$totalPages?'#':htmlspecialchars(pageUrl($page+1)) ?>" aria-label="Next page"><i class="fas fa-chevron-right" style="font-size:10px;"></i></a>
-    </div>
-    <?php endif; ?>
 
   </div><!-- /content -->
 </div><!-- /main-content -->
