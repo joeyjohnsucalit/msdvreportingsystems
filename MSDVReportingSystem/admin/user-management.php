@@ -74,39 +74,33 @@ if(isset($_POST['action'])&&$_POST['action']==='delete_user'){
     header('Location: user-management.php');exit;
 }
 
-// ── Pagination: 10 rows per page, each tab has its own page counter ──
-$perPage = 10;
+$activeTab=$_GET['tab']??'staff';
+$perPage=10;   // every page holds 10 rows (same as student-records.php)
 
-/* ── STAFF (filter + pagination) ── */
+/* ── STAFF: only one page is loaded from the database at a time ── */
 $searchStaff=trim($_GET['search_staff']??'');$filterRole=$_GET['role']??'';
 $whereStaff="WHERE role NOT IN ('admin','student')";$paramsStaff=[];
 if($searchStaff){$whereStaff.=" AND (full_name LIKE ? OR username LIKE ?)";$paramsStaff[]="%$searchStaff%";$paramsStaff[]="%$searchStaff%";}
 if($filterRole&&$filterRole!=='student'){$whereStaff.=" AND role=?";$paramsStaff[]=$filterRole;}
+$cs=$pdo->prepare("SELECT COUNT(*) FROM users $whereStaff");$cs->execute($paramsStaff);
+$staffTotal=(int)$cs->fetchColumn();
+$staffPages=max(1,(int)ceil($staffTotal/$perPage));
+$pgStaff=min(max(1,(int)($_GET['pg_staff']??1)),$staffPages);
+$staffOffset=($pgStaff-1)*$perPage;
+$staffStmt=$pdo->prepare("SELECT * FROM users $whereStaff ORDER BY role,full_name LIMIT $perPage OFFSET $staffOffset");$staffStmt->execute($paramsStaff);$staffUsers=$staffStmt->fetchAll();
 
-$cStmt=$pdo->prepare("SELECT COUNT(*) FROM users $whereStaff");$cStmt->execute($paramsStaff);
-$totalStaff=(int)$cStmt->fetchColumn();
-$totalStaffPages=max(1,(int)ceil($totalStaff/$perPage));
-$staffPage=min(max(1,(int)($_GET['spage']??1)),$totalStaffPages);
-$staffOffset=($staffPage-1)*$perPage;
-$staffStmt=$pdo->prepare("SELECT * FROM users $whereStaff ORDER BY role,full_name,id LIMIT $perPage OFFSET $staffOffset");
-$staffStmt->execute($paramsStaff);$staffUsers=$staffStmt->fetchAll();
-
-/* ── STUDENTS (filter + pagination) ── */
+/* ── STUDENT ACCOUNTS ── */
 $searchStu=trim($_GET['search_stu']??'');$whereStu="WHERE u.role='student'";$paramsStu=[];
 if($searchStu){$whereStu.=" AND (u.full_name LIKE ? OR u.username LIKE ? OR s.student_id LIKE ?)";$paramsStu[]="%$searchStu%";$paramsStu[]="%$searchStu%";$paramsStu[]="%$searchStu%";}
+$cu=$pdo->prepare("SELECT COUNT(*) FROM users u LEFT JOIN students s ON s.user_id=u.id $whereStu");$cu->execute($paramsStu);
+$stuTotal=(int)$cu->fetchColumn();
+$stuPages=max(1,(int)ceil($stuTotal/$perPage));
+$pgStu=min(max(1,(int)($_GET['pg_stu']??1)),$stuPages);
+$stuOffset=($pgStu-1)*$perPage;
+$stuStmt=$pdo->prepare("SELECT u.*,s.student_id as sid FROM users u LEFT JOIN students s ON s.user_id=u.id $whereStu ORDER BY u.full_name LIMIT $perPage OFFSET $stuOffset");$stuStmt->execute($paramsStu);$studentUsers=$stuStmt->fetchAll();
 
-$cStmt=$pdo->prepare("SELECT COUNT(*) FROM users u LEFT JOIN students s ON s.user_id=u.id $whereStu");$cStmt->execute($paramsStu);
-$totalStudents=(int)$cStmt->fetchColumn();
-$totalStuPages=max(1,(int)ceil($totalStudents/$perPage));
-$stuPage=min(max(1,(int)($_GET['tpage']??1)),$totalStuPages);
-$stuOffset=($stuPage-1)*$perPage;
-$stuStmt=$pdo->prepare("SELECT u.*,s.student_id as sid FROM users u LEFT JOIN students s ON s.user_id=u.id $whereStu ORDER BY u.full_name,u.id LIMIT $perPage OFFSET $stuOffset");
-$stuStmt->execute($paramsStu);$studentUsers=$stuStmt->fetchAll();
-
-$activeTab=$_GET['tab']??'staff';
-
-// Link to another page; keeps search, filter and the active tab
-function pageUrl($key,$p,$tab){ $q=$_GET; $q[$key]=$p; $q['tab']=$tab; return '?'.http_build_query($q); }
+// Link to another page while keeping the current search and filters
+function pagerUrl($tab,$param,$p){ $q=$_GET; $q['tab']=$tab; $q[$param]=$p; return '?'.http_build_query($q); }
 
 // Page numbers to show: 1 … 4 5 [6] 7 8 … 20
 function pageWindow($cur,$total){
@@ -118,27 +112,25 @@ function pageWindow($cur,$total){
     return $out;
 }
 
-// One footer renderer, used by both tabs
-function renderPager($key,$tab,$page,$totalPages,$total,$offset,$count,$noun){
-    ?>
-    <div class="table-foot">
-      <div class="foot-info">
-        <?php if($total>0): ?>Showing <strong><?= $offset+1 ?>–<?= $offset+$count ?></strong> of <strong><?= $total ?></strong> <?= $noun ?><?= $total!==1?'s':'' ?> · Page <strong><?= $page ?></strong> of <strong><?= $totalPages ?></strong>
-        <?php else: ?>No <?= $noun ?>s to show<?php endif; ?>
+// Table footer: "Showing x–y of z · Page a of b" + first/prev/numbers/next/last
+function renderPager($tab,$param,$page,$pages,$total,$offset,$shown,$noun){ ?>
+      <div class="table-foot">
+        <div class="foot-info">
+          <?php if($total>0): ?>Showing <strong><?= $offset+1 ?>–<?= $offset+$shown ?></strong> of <strong><?= $total ?></strong> <?= $noun ?><?= $total!==1?'s':'' ?> · Page <strong><?= $page ?></strong> of <strong><?= $pages ?></strong>
+          <?php else: ?>No <?= $noun ?>s to show<?php endif; ?>
+        </div>
+        <div class="pager">
+          <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pagerUrl($tab,$param,1)) ?>" aria-label="First page"><i class="fas fa-angles-left" style="font-size:10px;"></i></a>
+          <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pagerUrl($tab,$param,$page-1)) ?>" aria-label="Previous page"><i class="fas fa-chevron-left" style="font-size:10px;"></i></a>
+          <?php foreach(pageWindow($page,$pages) as $p): ?>
+            <?php if($p==='…'): ?><span class="pg-gap">…</span>
+            <?php else: ?><a class="pg-btn <?= $p==$page?'active':'' ?>" href="<?= htmlspecialchars(pagerUrl($tab,$param,$p)) ?>"><?= $p ?></a><?php endif; ?>
+          <?php endforeach; ?>
+          <a class="pg-btn <?= $page>=$pages?'disabled':'' ?>" href="<?= $page>=$pages?'#':htmlspecialchars(pagerUrl($tab,$param,$page+1)) ?>" aria-label="Next page"><i class="fas fa-chevron-right" style="font-size:10px;"></i></a>
+          <a class="pg-btn <?= $page>=$pages?'disabled':'' ?>" href="<?= $page>=$pages?'#':htmlspecialchars(pagerUrl($tab,$param,$pages)) ?>" aria-label="Last page"><i class="fas fa-angles-right" style="font-size:10px;"></i></a>
+        </div>
       </div>
-      <div class="pager">
-        <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pageUrl($key,1,$tab)) ?>" aria-label="First page"><i class="fas fa-angles-left" style="font-size:10px;"></i></a>
-        <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pageUrl($key,$page-1,$tab)) ?>" aria-label="Previous page"><i class="fas fa-chevron-left" style="font-size:10px;"></i></a>
-        <?php foreach(pageWindow($page,$totalPages) as $p): ?>
-          <?php if($p==='…'): ?><span class="pg-gap">…</span>
-          <?php else: ?><a class="pg-btn <?= $p==$page?'active':'' ?>" href="<?= htmlspecialchars(pageUrl($key,$p,$tab)) ?>"><?= $p ?></a><?php endif; ?>
-        <?php endforeach; ?>
-        <a class="pg-btn <?= $page>=$totalPages?'disabled':'' ?>" href="<?= $page>=$totalPages?'#':htmlspecialchars(pageUrl($key,$page+1,$tab)) ?>" aria-label="Next page"><i class="fas fa-chevron-right" style="font-size:10px;"></i></a>
-        <a class="pg-btn <?= $page>=$totalPages?'disabled':'' ?>" href="<?= $page>=$totalPages?'#':htmlspecialchars(pageUrl($key,$totalPages,$tab)) ?>" aria-label="Last page"><i class="fas fa-angles-right" style="font-size:10px;"></i></a>
-      </div>
-    </div>
-    <?php
-}
+<?php }
 ?>
 <?php require_once 'theme-head.php'; ?>
 <!DOCTYPE html>
@@ -165,7 +157,7 @@ function renderPager($key,$tab,$page,$totalPages,$total,$offset,$count,$noun){
 body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus Jakarta Sans',sans-serif; color:var(--text); }
 ::-webkit-scrollbar { width:0; }
 
-/* ── SIDEBAR ── */
+/* ── SIDEBAR (unchanged) ── */
 .sidebar { width:260px; height:100vh; background:var(--sidebar); color:#fff; position:fixed; top:0; left:0; display:flex; flex-direction:column; z-index:999; box-shadow:1px 0 0 rgba(255,255,255,0.04); }
 .adm_logo { display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:3px solid var(--sidebar-red); flex-shrink:0; }
 .adm_logo img { width:52px; height:52px; border-radius:50%; border:2px solid rgba(255,255,255,0.15); object-fit:cover; }
@@ -191,7 +183,8 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .notif-item.unread .notif-avatar { background:color-mix(in srgb, var(--accent) 24%, var(--surface)); }
 .notif-item.unread .notif-avatar i { color:var(--accent); }
 .notif-dot-ind { background:var(--accent); }
-/* ── NAVBAR ── */
+
+/* ── NAVBAR (unchanged) ── */
 .navbar { background:var(--sidebar); padding:0 28px; height:60px; position:fixed; left:260px; right:0; top:0; display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid var(--sidebar-red); z-index:1000; }
 .navbar h1 { color:#fff; font-size:18px; font-weight:600; letter-spacing:-0.2px; }
 .navbar-right { display:flex; align-items:center; gap:12px; }
@@ -200,7 +193,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .bell-btn:hover { background:rgba(255,255,255,0.13); }
 .notif-badge { position:absolute; top:-4px; right:-4px; background:#e53e3e; color:#fff; font-size:9px; width:17px; height:17px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; border:2px solid var(--sidebar); pointer-events:none; }
 
-/* ── NOTIFICATION DROPDOWN ── */
+/* ── NOTIFICATION DROPDOWN (unchanged) ── */
 .notif-dropdown { width:360px; border-radius:var(--r-lg); border:1px solid var(--border); box-shadow:0 8px 32px rgba(0,0,0,0.10),0 1px 4px rgba(0,0,0,0.06); background:var(--surface); overflow:hidden; }
 .notif-head { padding:16px 20px 14px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; justify-content:space-between; }
 .notif-head-left { display:flex; align-items:center; gap:8px; }
@@ -230,77 +223,77 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .notif-empty i { font-size:24px; color:var(--text-3); display:block; margin-bottom:8px; }
 .notif-empty p { font-size:13px; color:var(--text-3); margin:0; }
 
-/* User chip */
 .user-chip { display:flex; align-items:center; gap:8px; background:rgba(255,255,255,0.07); border:1px solid rgba(255,255,255,0.1); padding:5px 12px 5px 6px; border-radius:20px; }
 .user-avatar { width:26px; height:26px; border-radius:50%; background:rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:#fff; flex-shrink:0; }
 .user-name { font-size:12.5px; color:#c8cce0; font-weight:500; }
 
-/* ── CONTENT ── */
-.content { margin-top:60px; padding:28px 32px 40px; flex:1; }
+/* ═══════════════════════════════════════════
+   CONTENT AREA — REDESIGNED
+   ═══════════════════════════════════════════ */
+.content { margin-top:60px; padding:32px 36px 48px; flex:1; max-width:1400px; width:100%; }
 
-/* Page top */
-.page-top { display:flex; align-items:center; justify-content:flex-end; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
-.page-top h2 { font-size:22px; font-weight:600; color:var(--text); letter-spacing:-0.4px; margin:0 0 3px; }
-.page-top p  { font-size:13px; color:var(--text-3); margin:0; }
+/* Page header */
+.page-top { display:flex; align-items:center; justify-content:flex-end; margin-bottom:20px; flex-wrap:wrap; gap:14px; }
+.page-top h2 { font-size:24px; font-weight:600; color:var(--text); letter-spacing:-0.5px; margin:0 0 4px; }
+.page-top p  { font-size:13px; color:var(--text-2); margin:0; }
 
-/* Add button */
-.btn-add { display:inline-flex; align-items:center; gap:7px; background:var(--accent); color:#fff; border:none; padding:9px 18px; border-radius:var(--r-sm); font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:background 0.15s, transform 0.1s; white-space:nowrap; }
-.btn-add:hover { background:#1d4ed8; color:#fff; }
-.btn-add:active { transform:scale(0.98); }
+.btn-add { display:inline-flex; align-items:center; gap:8px; background:var(--accent); color:#fff; border:none; padding:10px 20px; border-radius:999px; font-size:13px; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:transform .12s, box-shadow .2s, filter .15s; white-space:nowrap; box-shadow:0 6px 16px -6px color-mix(in srgb, var(--accent) 70%, transparent); }
+.btn-add:hover { filter:brightness(1.08); color:#fff; box-shadow:0 8px 20px -6px color-mix(in srgb, var(--accent) 80%, transparent); }
+.btn-add:active { transform:scale(0.97); }
+.btn-add .plus { width:18px; height:18px; border-radius:50%; background:rgba(255,255,255,.22); display:inline-flex; align-items:center; justify-content:center; font-size:9px; }
 
-/* Alert banners */
-.alert-banner { border-radius:var(--r-md); padding:12px 16px; font-size:13px; font-weight:500; margin-bottom:16px; display:flex; align-items:center; gap:10px; border:none; }
-.alert-banner.success { background:#f0fdf4; color:#15803d; }
-.alert-banner.error   { background:#fff0f0; color:#dc2626; }
+/* Alerts */
+.alert-banner { border-radius:var(--r-md); padding:12px 16px; font-size:13px; font-weight:500; margin-bottom:18px; display:flex; align-items:center; gap:10px; border:1px solid; border-left-width:4px; }
+.alert-banner.success { background:#f0fdf4; color:#15803d; border-color:#bbf7d0; border-left-color:#16a34a; }
+.alert-banner.error   { background:#fff5f5; color:#dc2626; border-color:#fecaca; border-left-color:#dc2626; }
 .alert-banner i { flex-shrink:0; }
 
-/* ── TABS ── */
-.tab-bar { display:flex; gap:4px; border-bottom:2px solid var(--border); margin-bottom:20px; }
-.tab-btn { display:inline-flex; align-items:center; gap:7px; padding:10px 16px; font-size:13px; font-weight:500; color:var(--text-2); background:none; border:none; border-bottom:2px solid transparent; margin-bottom:-2px; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; transition:all 0.15s; border-radius:var(--r-sm) var(--r-sm) 0 0; }
-.tab-btn:hover { color:var(--text); background:var(--border-soft); }
-.tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); background:var(--accent-light); }
-.tab-pill { background:var(--border-soft); color:var(--text-3); font-size:10px; font-weight:700; padding:1px 7px; border-radius:20px; }
-.tab-btn.active .tab-pill { background:#dbeafe; color:var(--accent); }
+/* Segmented tabs */
+.toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:12px; margin-bottom:20px; }
+.toolbar .tab-bar { margin-bottom:0; }
+.tab-bar { display:inline-flex; gap:4px; padding:4px; background:color-mix(in srgb, var(--text) 6%, var(--surface)); border-radius:999px; margin-bottom:20px; }
+.tab-btn { display:inline-flex; align-items:center; gap:8px; padding:8px 18px; font-size:13px; font-weight:500; color:var(--text-2); background:transparent; border:none; border-radius:999px; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; transition:all .18s; }
+.tab-btn:hover { color:var(--text); }
+.tab-btn.active { background:var(--surface); color:var(--accent); font-weight:600; box-shadow:0 1px 3px rgba(0,0,0,.10), 0 1px 2px rgba(0,0,0,.06); }
+.tab-pill { background:color-mix(in srgb, var(--text) 8%, transparent); color:var(--text-2); font-size:10.5px; font-weight:600; padding:1px 8px; border-radius:20px; }
+.tab-btn.active .tab-pill { background:color-mix(in srgb, var(--accent) 14%, transparent); color:var(--accent); }
 
 /* Filter bar */
-.filter-bar { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); padding:16px 20px; margin-bottom:20px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.filter-bar { display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-bottom:16px; }
+.search-box { position:relative; flex:1 1 280px; max-width:380px; }
+.search-box i { position:absolute; left:14px; top:50%; transform:translateY(-50%); font-size:12px; color:var(--text-3); pointer-events:none; }
 .filter-input, .filter-select {
-    font-size:13px; padding:8px 12px; border-radius:var(--r-sm);
-    border:1px solid var(--border); background:#fff; color:var(--text);
+    font-size:13px; padding:8px 14px; border-radius:999px;
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
     font-family:'Plus Jakarta Sans',sans-serif; outline:none;
-    transition:border-color 0.15s; height:36px;
+    transition:border-color .15s, box-shadow .15s; height:40px;
 }
-.filter-input:focus, .filter-select:focus { border-color:var(--accent); }
-.filter-input { min-width:200px; }
-.filter-select { appearance:none; -webkit-appearance:none; padding-right:28px; cursor:pointer;
+.filter-input { width:100%; padding-left:38px; }
+.filter-input:focus, .filter-select:focus { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+.filter-select { appearance:none; -webkit-appearance:none; padding-right:32px; cursor:pointer; min-width:140px;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239ca3af' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-    background-repeat:no-repeat; background-position:right 8px center; background-color:#fff;
-}
-.filter-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:var(--r-sm); font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all 0.15s; height:36px; border:1px solid; }
-.filter-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-.filter-btn.primary:hover { background:#1d4ed8; }
-.filter-btn.secondary { background:#fff; color:var(--text-2); border-color:var(--border); text-decoration:none; }
-.filter-btn.secondary:hover { background:var(--bg); }
+    background-repeat:no-repeat; background-position:right 14px center; }
+.filter-btn { display:inline-flex; align-items:center; gap:6px; padding:0 18px; border-radius:999px; font-size:13px; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all .15s; height:40px; border:1px solid; text-decoration:none; }
+.filter-btn.primary { background:var(--text); color:var(--surface); border-color:var(--text); }
+.filter-btn.primary:hover { opacity:.85; }
+.filter-btn.secondary { background:transparent; color:var(--text-2); border-color:transparent; }
+.filter-btn.secondary:hover { background:color-mix(in srgb, var(--text) 6%, transparent); color:var(--text); }
 
-/* Info banner */
-.info-banner { background:#eff4ff; border:1px solid #c7d7f8; border-radius:var(--r-md); padding:11px 16px; font-size:12.5px; color:#2563eb; display:flex; align-items:center; gap:8px; margin-bottom:16px; }
-.info-banner a { color:var(--accent); font-weight:600; }
-
-/* ── TABLE ── */
-.table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; }
-.data-table { width:100%; border-collapse:collapse; font-size:13px; }
-.data-table thead tr { border-bottom:1px solid var(--border); }
-.data-table thead th { padding:11px 16px; font-size:10.5px; font-weight:600; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-3); background:var(--bg); white-space:nowrap; }
-.data-table tbody tr { border-bottom:1px solid var(--border-soft); transition:background 0.1s; }
-.data-table tbody tr:last-child { border-bottom:none; }
-.data-table tbody tr:hover { background:#fafbfc; }
-.data-table td { padding:13px 16px; color:var(--text); vertical-align:middle; }
-.data-table td.sid { font-weight:600; font-family:monospace; font-size:12.5px; color:var(--accent); letter-spacing:0.2px; }
-.data-table td.name { font-weight:500; }
+/* Table card */
+.table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden; box-shadow:0 1px 2px rgba(16,24,40,.04); }
+.table-scroll { overflow-x:auto; }
+.data-table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; }
+.data-table thead th { padding:14px 20px; font-size:11px; font-weight:600; letter-spacing:.6px; text-transform:uppercase; color:var(--text-3); background:transparent; border-bottom:1px solid var(--border); white-space:nowrap; text-align:left; }
+.data-table tbody td { padding:14px 20px; color:var(--text); vertical-align:middle; border-bottom:1px solid var(--border-soft); }
+.data-table tbody tr:last-child td { border-bottom:none; }
+.data-table tbody tr { transition:background .12s; }
+.data-table tbody tr:hover { background:color-mix(in srgb, var(--accent) 4%, var(--surface)); }
 .data-table td.muted { color:var(--text-2); }
-.empty-row td { padding:40px 16px; text-align:center; color:var(--text-3); font-size:13px; }
+.data-table td.sid { font-weight:600; font-family:monospace; font-size:12.5px; color:var(--accent); }
+.empty-row td { padding:56px 16px !important; text-align:center; color:var(--text-3); font-size:13px; }
+.empty-row i { font-size:28px; display:block; margin-bottom:10px; opacity:.6; }
 
-/* ── TABLE FOOTER + PAGINATION ── */
+/* Table footer + pagination (same as student-records) */
 .table-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:14px 18px; background:var(--bg); border-top:1px solid var(--border); }
 .foot-info { font-size:12.5px; color:var(--text-3); }
 .foot-info strong { color:var(--text); font-weight:600; }
@@ -310,69 +303,78 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .pg-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent); pointer-events:none; }
 .pg-btn.disabled { opacity:.4; pointer-events:none; }
 .pg-gap { color:var(--text-3); padding:0 4px; font-size:13px; }
-@media (max-width: 768px) {
-    .table-foot { justify-content:center; text-align:center; padding:10px 12px; }
-    .foot-info  { width:100%; }
-    .pager      { justify-content:center; }
-    .pg-btn     { min-width:32px; height:32px; padding:0 8px; font-size:12px; }
-}
+
+/* Person cell (avatar + name) */
+.person { display:flex; align-items:center; gap:12px; }
+.p-name { font-weight:600; color:var(--text); line-height:1.3; }
+.p-sub  { font-size:11.5px; color:var(--text-3); line-height:1.3; }
 
 /* Role badge */
-.role-badge { display:inline-flex; align-items:center; padding:2px 10px; border-radius:20px; font-size:11px; font-weight:600; }
-.role-badge.teacher { background:#eff4ff; color:#2563eb; }
-.role-badge.csu     { background:#f0fdf4; color:#16a34a; }
-.role-badge.jassu   { background:#fffbeb; color:#d97706; }
-.role-badge.nurse   { background:#fdf2f8; color:#be185d; }
-.role-badge.student { background:#f4f5f7; color:#374151; }
+.role-badge { display:inline-flex; align-items:center; gap:6px; padding:3px 11px 3px 9px; border-radius:20px; font-size:11.5px; font-weight:600; background:color-mix(in srgb, currentColor 11%, transparent); }
+.role-badge::before { content:''; width:6px; height:6px; border-radius:50%; background:currentColor; }
+.role-badge.teacher { color:#2563eb; }
+.role-badge.csu     { color:#16a34a; }
+.role-badge.jassu   { color:#d97706; }
+.role-badge.nurse   { color:#be185d; }
+.role-badge.student { color:#6b7280; }
 
-/* Action buttons */
-.act-btn { display:inline-flex; align-items:center; gap:5px; padding:5px 11px; border-radius:var(--r-sm); font-size:12px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; border:1px solid; transition:all 0.15s; white-space:nowrap; }
-.act-btn.edit   { background:#fffbeb; color:#92400e; border-color:#fcd34d; }
-.act-btn.edit:hover   { background:#fef3c7; }
-.act-btn.pass   { background:#eff4ff; color:var(--accent); border-color:#c7d7f8; }
-.act-btn.pass:hover   { background:#dbeafe; }
-.act-btn.danger { background:#fff0f0; color:#dc2626; border-color:#fecaca; }
-.act-btn.danger:hover { background:#fee2e2; }
+.type-chip { font-size:12px; color:var(--text-2); }
+
+/* Icon action buttons */
+.row-actions { display:flex; gap:6px; justify-content:flex-end; }
+.act-btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; width:34px; height:34px; border-radius:10px; font-size:12px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; border:1px solid var(--border); background:var(--surface); color:var(--text-2); transition:all .15s; }
+.act-btn.wide { width:auto; padding:0 14px; }
+.act-btn.edit:hover   { background:#fffbeb; color:#b45309; border-color:#fcd34d; }
+.act-btn.pass:hover   { background:color-mix(in srgb, var(--accent) 10%, var(--surface)); color:var(--accent); border-color:color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.act-btn.danger:hover { background:#fff1f1; color:#dc2626; border-color:#fecaca; }
 
 /* ── MODALS ── */
-.modal-content { border:1px solid var(--border); border-radius:var(--r-lg); box-shadow:0 16px 48px rgba(0,0,0,0.12); font-family:'Plus Jakarta Sans',sans-serif; overflow:hidden; }
-.modal-header { padding:20px 24px 16px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; justify-content:space-between; }
-.modal-header .modal-title { font-size:16px; font-weight:600; color:var(--text); letter-spacing:-0.2px; }
-.modal-header.danger-head { background:#fff0f0; }
-.modal-header.danger-head .modal-title { color:#dc2626; }
-.modal-header .btn-close { opacity:0.4; }
-.modal-header .btn-close:hover { opacity:0.7; }
-.modal-body { padding:20px 24px; }
-.modal-footer { padding:14px 24px; border-top:1px solid var(--border-soft); display:flex; justify-content:flex-end; gap:8px; background:#fafbfc; }
+.modal-content { border:none; border-radius:20px; box-shadow:0 24px 64px rgba(0,0,0,.18); font-family:'Plus Jakarta Sans',sans-serif; overflow:hidden; background:var(--surface); color:var(--text); }
+.modal-backdrop.show { opacity:.45; }
+.modal-header { padding:22px 26px 6px; border:none; display:flex; align-items:center; justify-content:space-between; gap:12px; }
+.m-title-wrap { display:flex; align-items:center; gap:12px; }
+.m-icon { width:40px; height:40px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:15px; background:color-mix(in srgb, var(--accent) 12%, transparent); color:var(--accent); flex-shrink:0; }
+.m-icon.warn   { background:#fffbeb; color:#b45309; }
+.m-icon.danger { background:#fff1f1; color:#dc2626; }
+.modal-header .modal-title { font-size:17px; font-weight:600; color:var(--text); letter-spacing:-.2px; }
+.modal-header .m-sub { font-size:12px; color:var(--text-3); margin-top:1px; }
+.modal-header .btn-close { opacity:.35; }
+.modal-header .btn-close:hover { opacity:.7; }
+.modal-body { padding:16px 26px 8px; }
+.modal-footer { padding:16px 26px 22px; border:none; display:flex; justify-content:flex-end; gap:8px; background:transparent; }
 
-/* Form elements */
-.f-group { margin-bottom:16px; }
+.f-group { margin-bottom:14px; }
 .f-group:last-child { margin-bottom:0; }
-.f-label { display:block; font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px; }
+.f-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.f-label { display:block; font-size:12px; font-weight:600; color:var(--text-2); margin-bottom:6px; }
 .f-input, .f-select {
-    width:100%; padding:9px 12px; border-radius:var(--r-sm);
-    border:1px solid var(--border); background:#fff; color:var(--text);
+    width:100%; padding:10px 14px; border-radius:10px;
+    border:1px solid var(--border); background:color-mix(in srgb, var(--text) 2.5%, var(--surface)); color:var(--text);
     font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif;
-    outline:none; transition:border-color 0.15s; box-sizing:border-box;
+    outline:none; transition:border-color .15s, box-shadow .15s, background .15s;
 }
-.f-input:focus, .f-select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(37,99,235,0.08); }
-.f-select { appearance:none; -webkit-appearance:none; cursor:pointer;
+.f-input:focus, .f-select:focus { border-color:var(--accent); background:var(--surface); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+.f-select { appearance:none; -webkit-appearance:none; cursor:pointer; padding-right:34px;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239ca3af' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-    background-repeat:no-repeat; background-position:right 10px center; padding-right:30px;
-}
+    background-repeat:no-repeat; background-position:right 14px center; }
 
-/* Modal buttons */
-.m-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 18px; border-radius:var(--r-sm); font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all 0.15s; border:1px solid; }
-.m-btn.ghost   { background:#fff; color:var(--text-2); border-color:var(--border); }
-.m-btn.ghost:hover { background:var(--bg); }
+.m-btn { display:inline-flex; align-items:center; gap:7px; padding:10px 20px; border-radius:999px; font-size:13px; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all .15s; border:1px solid; }
+.m-btn.ghost   { background:transparent; color:var(--text-2); border-color:var(--border); }
+.m-btn.ghost:hover { background:color-mix(in srgb, var(--text) 5%, transparent); color:var(--text); }
 .m-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-.m-btn.primary:hover { background:#1d4ed8; }
-.m-btn.warn    { background:#fffbeb; color:#92400e; border-color:#fcd34d; }
-.m-btn.warn:hover { background:#fef3c7; }
+.m-btn.primary:hover { filter:brightness(1.1); }
+.m-btn.warn    { background:#f59e0b; color:#fff; border-color:#f59e0b; }
+.m-btn.warn:hover { background:#d97706; border-color:#d97706; }
 .m-btn.danger  { background:#dc2626; color:#fff; border-color:#dc2626; }
 .m-btn.danger:hover { background:#b91c1c; }
-.m-btn.info-btn { background:#eff4ff; color:var(--accent); border-color:#c7d7f8; }
-.m-btn.info-btn:hover { background:#dbeafe; }
+.m-btn.info-btn { background:var(--accent); color:#fff; border-color:var(--accent); }
+.m-btn.info-btn:hover { filter:brightness(1.1); }
+
+.danger-note { display:flex; gap:10px; background:#fff5f5; border:1px solid #fecaca; color:#b91c1c; border-radius:12px; padding:12px 14px; font-size:12.5px; line-height:1.55; margin-bottom:16px; }
+.danger-note i { margin-top:2px; }
+
+@media (max-width:640px){ .f-row{ grid-template-columns:1fr; } .content{ padding:24px 16px; }
+  .table-foot{ justify-content:center; text-align:center; padding:10px 12px; } .foot-info{ width:100%; } .pager{ justify-content:center; } .pg-btn{ min-width:32px; height:32px; padding:0 8px; font-size:12px; } }
 </style>
 </head>
 <body>
@@ -457,22 +459,20 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
     <div class="alert-banner error"><i class="fas fa-exclamation-circle"></i><?= htmlspecialchars($_SESSION['err']) ?><?php unset($_SESSION['err']); ?></div>
     <?php endif; ?>
 
-    <!-- Page top -->
-    <div class="page-top">
-      <button class="btn-add" data-bs-toggle="modal" data-bs-target="#addUserModal">
-        <i class="fas fa-plus" style="font-size:11px;"></i> Add Staff User
-      </button>
-    </div>
-
-    <!-- Tabs (the pills show the total matches, not just the current page) -->
+    <!-- Tabs + Add button (one row) -->
+    <div class="toolbar">
     <div class="tab-bar">
       <button class="tab-btn <?= $activeTab==='staff'?'active':'' ?>" id="staffTabBtn" onclick="switchTab('staff')">
         <i class="fas fa-id-badge" style="font-size:12px;"></i> Staff
-        <span class="tab-pill"><?= $totalStaff ?></span>
+        <span class="tab-pill"><?= $staffTotal ?></span>
       </button>
       <button class="tab-btn <?= $activeTab==='student'?'active':'' ?>" id="studentTabBtn" onclick="switchTab('student')">
         <i class="fas fa-user-graduate" style="font-size:12px;"></i> Student Accounts
-        <span class="tab-pill"><?= $totalStudents ?></span>
+        <span class="tab-pill"><?= $stuTotal ?></span>
+      </button>
+    </div>
+      <button class="btn-add" data-bs-toggle="modal" data-bs-target="#addUserModal">
+        <span class="plus"><i class="fas fa-plus"></i></span> Add Staff User
       </button>
     </div>
 
@@ -480,7 +480,10 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
     <div id="staffPanel" style="display:<?= $activeTab==='staff'?'block':'none' ?>;">
       <form method="GET" class="filter-bar">
         <input type="hidden" name="tab" value="staff">
-        <input type="text" name="search_staff" class="filter-input" placeholder="Search name or username…" value="<?= htmlspecialchars($searchStaff) ?>">
+        <div class="search-box">
+          <i class="fas fa-search"></i>
+          <input type="text" name="search_staff" class="filter-input" placeholder="Search name or username…" value="<?= htmlspecialchars($searchStaff) ?>">
+        </div>
         <select name="role" class="filter-select">
           <option value="">All Roles</option>
           <option value="teacher" <?=$filterRole==='teacher'?'selected':''?>>Instructor</option>
@@ -488,34 +491,40 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
           <option value="jassu"   <?=$filterRole==='jassu'  ?'selected':''?>>JASSU</option>
           <option value="nurse"   <?=$filterRole==='nurse'  ?'selected':''?>>Nurse</option>
         </select>
-        <button type="submit" class="filter-btn primary"><i class="fas fa-search" style="font-size:11px;"></i> Search</button>
+        <button type="submit" class="filter-btn primary">Search</button>
         <a href="user-management.php?tab=staff" class="filter-btn secondary">Reset</a>
       </form>
       <div class="table-wrap">
-        <table class="data-table">
+        <div class="table-scroll"><table class="data-table">
           <thead>
-            <tr><th>Full Name</th><th>Username</th><th>Email</th><th>Staff Type</th><th>Role</th><th style="width:200px;"></th></tr>
+            <tr><th>Full Name</th><th>Username</th><th>Email</th><th>Staff Type</th><th>Role</th><th style="width:140px;"></th></tr>
           </thead>
           <tbody>
             <?php if(empty($staffUsers)): ?>
-            <tr class="empty-row"><td colspan="6"><i class="fas fa-users" style="font-size:20px;display:block;margin-bottom:8px;"></i>No staff users found.</td></tr>
+            <tr class="empty-row"><td colspan="6"><i class="fas fa-users"></i>No staff users found.</td></tr>
             <?php else: foreach($staffUsers as $u): ?>
             <tr>
-              <td class="name"><?= htmlspecialchars($u['full_name']) ?></td>
+              <td>
+                <div class="person">
+                  <div class="p-name"><?= htmlspecialchars($u['full_name']) ?></div>
+                </div>
+              </td>
               <td class="muted"><?= htmlspecialchars($u['username']) ?></td>
               <td class="muted"><?= htmlspecialchars($u['email']??'—') ?></td>
-              <td class="muted"><?= staffTypeLabel($u['staff_type'] ?? null) ?></td>
+              <td><span class="type-chip"><?= staffTypeLabel($u['staff_type'] ?? null) ?></span></td>
               <td><span class="role-badge <?= htmlspecialchars($u['role']) ?>"><?= roleLabel($u['role']) ?></span></td>
-              <td style="display:flex;gap:6px;flex-wrap:wrap;">
-                <button class="act-btn edit"   onclick='openEditUser(<?= json_encode($u, JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_TAG|JSON_HEX_AMP) ?>)'><i class="fas fa-pencil-alt" style="font-size:10px;"></i> Edit</button>
-                <button class="act-btn pass"   onclick='openChangePass(<?= $u["id"] ?>)'><i class="fas fa-key" style="font-size:10px;"></i> Password</button>
-                <button class="act-btn danger" onclick='openDeleteUser(<?= $u["id"] ?>)'><i class="fas fa-trash" style="font-size:10px;"></i> Delete</button>
+              <td>
+                <div class="row-actions">
+                  <button class="act-btn edit"   title="Edit"            onclick='openEditUser(<?= json_encode($u, JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_TAG|JSON_HEX_AMP) ?>)'><i class="fas fa-pencil-alt"></i></button>
+                  <button class="act-btn pass"   title="Change password" onclick='openChangePass(<?= $u["id"] ?>)'><i class="fas fa-key"></i></button>
+                  <button class="act-btn danger" title="Delete"          onclick='openDeleteUser(<?= $u["id"] ?>)'><i class="fas fa-trash"></i></button>
+                </div>
               </td>
             </tr>
             <?php endforeach; endif; ?>
           </tbody>
-        </table>
-        <?php renderPager('spage','staff',$staffPage,$totalStaffPages,$totalStaff,$staffOffset,count($staffUsers),'user'); ?>
+        </table></div>
+        <?php renderPager('staff','pg_staff',$pgStaff,$staffPages,$staffTotal,$staffOffset,count($staffUsers),'user'); ?>
       </div>
     </div>
 
@@ -524,30 +533,37 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 
       <form method="GET" class="filter-bar">
         <input type="hidden" name="tab" value="student">
-        <input type="text" name="search_stu" class="filter-input" placeholder="Search name, username or student ID…" value="<?= htmlspecialchars($searchStu) ?>">
-        <button type="submit" class="filter-btn primary"><i class="fas fa-search" style="font-size:11px;"></i> Search</button>
+        <div class="search-box">
+          <i class="fas fa-search"></i>
+          <input type="text" name="search_stu" class="filter-input" placeholder="Search name, username or student ID…" value="<?= htmlspecialchars($searchStu) ?>">
+        </div>
+        <button type="submit" class="filter-btn primary">Search</button>
         <a href="user-management.php?tab=student" class="filter-btn secondary">Reset</a>
       </form>
       <div class="table-wrap">
-        <table class="data-table">
+        <div class="table-scroll"><table class="data-table">
           <thead>
-            <tr><th>Student ID</th><th>Full Name</th><th>Username</th><th>Role</th><th style="width:160px;"></th></tr>
+            <tr><th>Student ID</th><th>Full Name</th><th>Username</th><th>Role</th><th style="width:190px;"></th></tr>
           </thead>
           <tbody>
             <?php if(empty($studentUsers)): ?>
-            <tr class="empty-row"><td colspan="5"><i class="fas fa-user-graduate" style="font-size:20px;display:block;margin-bottom:8px;"></i>No student accounts found.</td></tr>
+            <tr class="empty-row"><td colspan="5"><i class="fas fa-user-graduate"></i>No student accounts found.</td></tr>
             <?php else: foreach($studentUsers as $u): ?>
             <tr>
               <td class="sid"><?= htmlspecialchars($u['sid']??'—') ?></td>
-              <td class="name"><?= htmlspecialchars($u['full_name']) ?></td>
+              <td class="name"><div class="p-name"><?= htmlspecialchars($u['full_name']) ?></div></td>
               <td class="muted"><?= htmlspecialchars($u['username']) ?></td>
               <td><span class="role-badge student">Student</span></td>
-              <td><button class="act-btn pass" onclick='openChangePass(<?= $u["id"] ?>)'><i class="fas fa-key" style="font-size:10px;"></i> Change Password</button></td>
+              <td>
+                <div class="row-actions">
+                  <button class="act-btn pass wide" onclick='openChangePass(<?= $u["id"] ?>)'><i class="fas fa-key" style="font-size:11px;"></i> Change Password</button>
+                </div>
+              </td>
             </tr>
             <?php endforeach; endif; ?>
           </tbody>
-        </table>
-        <?php renderPager('tpage','student',$stuPage,$totalStuPages,$totalStudents,$stuOffset,count($studentUsers),'account'); ?>
+        </table></div>
+        <?php renderPager('student','pg_stu',$pgStu,$stuPages,$stuTotal,$stuOffset,count($studentUsers),'student'); ?>
       </div>
     </div>
 
@@ -560,15 +576,22 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
     <form method="POST" class="modal-content">
       <input type="hidden" name="action" value="add_user">
       <div class="modal-header">
-        <span class="modal-title">Add Staff User</span>
+        <div class="m-title-wrap">
+          <div class="m-icon"><i class="fas fa-user-plus"></i></div>
+          <div><div class="modal-title">Add Staff User</div><div class="m-sub">Create a new staff account</div></div>
+        </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <div class="f-group"><label class="f-label">Full Name</label><input type="text" name="full_name" class="f-input" required></div>
-        <div class="f-group"><label class="f-label">Username</label><input type="text" name="username" class="f-input" required></div>
-        <div class="f-group"><label class="f-label">Email</label><input type="email" name="email" class="f-input"></div>
-        <div class="f-group"><label class="f-label">Password</label><input type="password" name="password" class="f-input" required></div>
-        <div class="f-group"><label class="f-label">Confirm Password</label><input type="password" name="confirm_password" class="f-input" required></div>
+        <div class="f-row">
+          <div class="f-group"><label class="f-label">Username</label><input type="text" name="username" class="f-input" required></div>
+          <div class="f-group"><label class="f-label">Email</label><input type="email" name="email" class="f-input"></div>
+        </div>
+        <div class="f-row">
+          <div class="f-group"><label class="f-label">Password</label><input type="password" name="password" class="f-input" required></div>
+          <div class="f-group"><label class="f-label">Confirm Password</label><input type="password" name="confirm_password" class="f-input" required></div>
+        </div>
         <div class="f-group">
           <label class="f-label">Staff Type</label>
           <select name="staff_type" id="addType" class="f-select" required onchange="populateRoles('addType','addRole')">
@@ -597,13 +620,18 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
       <input type="hidden" name="action" value="edit_user">
       <input type="hidden" name="user_id" id="editUID">
       <div class="modal-header">
-        <span class="modal-title">Edit User</span>
+        <div class="m-title-wrap">
+          <div class="m-icon warn"><i class="fas fa-pen"></i></div>
+          <div><div class="modal-title">Edit User</div><div class="m-sub">Update account details</div></div>
+        </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <div class="f-group"><label class="f-label">Full Name</label><input type="text" name="full_name" id="euName" class="f-input" required></div>
-        <div class="f-group"><label class="f-label">Username</label><input type="text" name="username" id="euUsername" class="f-input" required></div>
-        <div class="f-group"><label class="f-label">Email</label><input type="email" name="email" id="euEmail" class="f-input"></div>
+        <div class="f-row">
+          <div class="f-group"><label class="f-label">Username</label><input type="text" name="username" id="euUsername" class="f-input" required></div>
+          <div class="f-group"><label class="f-label">Email</label><input type="email" name="email" id="euEmail" class="f-input"></div>
+        </div>
         <div class="f-group">
           <label class="f-label">Staff Type</label>
           <select name="staff_type" id="euType" class="f-select" required onchange="populateRoles('euType','euRole')">
@@ -631,7 +659,10 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
       <input type="hidden" name="action" value="change_password">
       <input type="hidden" name="user_id" id="cpUID">
       <div class="modal-header">
-        <span class="modal-title">Change Password</span>
+        <div class="m-title-wrap">
+          <div class="m-icon"><i class="fas fa-key"></i></div>
+          <div><div class="modal-title">Change Password</div><div class="m-sub">Set a new password for this account</div></div>
+        </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -652,12 +683,15 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
     <form method="POST" class="modal-content">
       <input type="hidden" name="action" value="delete_user">
       <input type="hidden" name="user_id" id="delUID">
-      <div class="modal-header danger-head">
-        <span class="modal-title"><i class="fas fa-exclamation-triangle" style="margin-right:8px;font-size:14px;"></i>Delete Staff User</span>
+      <div class="modal-header">
+        <div class="m-title-wrap">
+          <div class="m-icon danger"><i class="fas fa-exclamation-triangle"></i></div>
+          <div><div class="modal-title">Delete Staff User</div><div class="m-sub">This can't be undone</div></div>
+        </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <p style="font-size:13.5px;color:var(--text-2);margin-bottom:16px;line-height:1.6;">This will permanently remove the staff account. This action cannot be undone.</p>
+        <div class="danger-note"><i class="fas fa-info-circle"></i><span>This will permanently remove the staff account. This action cannot be undone.</span></div>
         <div class="f-group" style="margin:0;">
           <label class="f-label">Deletion Password</label>
           <input type="password" name="del_password" class="f-input" placeholder="Enter deletion password…" required>
