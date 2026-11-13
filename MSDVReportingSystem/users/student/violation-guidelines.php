@@ -1,6 +1,6 @@
 <?php
 session_start();
-$allowedRoles = ['teacher','csu','jassu','nurse',];
+$allowedRoles = ['teacher','csu','jassu','nurse','student'];
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role'], $allowedRoles)) {
     header('Location: ../../login.php'); exit;
 }
