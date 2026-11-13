@@ -693,6 +693,9 @@ $majorCount = count(array_filter($violations, fn($v) => $v['category'] === 'majo
   .warn-btn:disabled { opacity: .55; cursor: not-allowed; }
 
 </style>
+
+<!-- Light / Dark mode: must stay AFTER the page's <style> and INSIDE <head> -->
+<?php require_once 'theme-mode.php'; ?>
 </head>
 <body>
 
