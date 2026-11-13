@@ -7,29 +7,20 @@ header("Pragma: no-cache");
 header("Expires: Sat, 01 Jan 2000 00:00:00 GMT");
 
 function redirectByRole($role) {
-    switch ($role) {
+    switch (strtolower($role)) {
         case 'admin':
             header('Location: admin/dashboard.php');
             break;
-        case 'nurse':
-            header('Location: nurse/report-form.php');
-            break;
+
         case 'student':
-            header('Location: student/dashboard.php');
+            header('Location: users/student/dashboard.php');
             break;
-        case 'jassu':
-            header('Location: jassu/report-form.php');
-            break;
-        case 'csu':
-            header('Location: csu/report-form.php');
-            break;
-        case 'teacher':
-            header('Location: jassu/report-form.php');
-            break;
+
         default:
-            header('Location: login.html?error=' . urlencode('Unknown role. Please contact the administrator.'));
+            header('Location: users/staff/report-form.php');
             break;
     }
+
     exit;
 }
 
