@@ -60,6 +60,7 @@ $notifList = $notifStmt->fetchAll();
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="notif-theme.css">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -73,7 +74,7 @@ $notifList = $notifStmt->fetchAll();
 body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus Jakarta Sans',sans-serif; color:var(--text); }
 ::-webkit-scrollbar { width:0; }
 
-/* SIDEBAR */
+/* SIDEBAR (unchanged) */
 .sidebar { width:260px; height:100vh; background:var(--sidebar); color:#fff; position:fixed; top:0; left:0; display:flex; flex-direction:column; z-index:999; box-shadow:1px 0 0 rgba(255,255,255,0.04); }
 .adm_logo { display:flex; align-items:center; gap:12px; padding:14px 16px; border-bottom:3px solid var(--sidebar-red); flex-shrink:0; }
 .adm_logo img { width:52px; height:52px; border-radius:50%; border:2px solid rgba(255,255,255,0.15); object-fit:cover; }
@@ -87,7 +88,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .sidebar_content ul li a:hover { background:rgba(255,255,255,0.06); color:#fff; }
 .sidebar_content ul li a.active { background:rgba(255,255,255,0.07); color:#fff; border-left:3px solid var(--sidebar-red); padding-left:15px; margin-left:8px; }
 
-/* MAIN + NAVBAR */
+/* MAIN + NAVBAR (unchanged) */
 .main-content { margin-left:260px; width:calc(100% - 260px); min-height:100vh; display:flex; flex-direction:column; }
 .navbar { background:var(--sidebar); padding:0 28px; height:60px; position:fixed; left:260px; right:0; top:0; display:flex; align-items:center; justify-content:space-between; border-bottom:3px solid var(--sidebar-red); z-index:1000; }
 .navbar h1 { color:#fff; font-size:18px; font-weight:600; letter-spacing:-0.2px; }
@@ -124,52 +125,61 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .user-avatar { width:26px; height:26px; border-radius:50%; background:rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:#fff; flex-shrink:0; }
 .user-name { font-size:12.5px; color:#c8cce0; font-weight:500; }
 
-/* CONTENT */
-.content { margin-top:60px; padding:28px 32px 40px; flex:1; max-width:1000px; }
-.alert-banner { border-radius:var(--r-md); padding:12px 16px; font-size:13px; font-weight:500; margin-bottom:16px; display:flex; align-items:center; gap:10px; }
-.alert-banner.success { background:#f0fdf4; color:#15803d; }
-.alert-banner.error   { background:#fff0f0; color:#dc2626; }
+/* ═══════════════════════════════════════════
+   CONTENT AREA — REDESIGNED
+   ═══════════════════════════════════════════ */
+.content { margin-top:60px; padding:32px 36px 48px; flex:1; max-width:1100px; width:100%; }
 
-.panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); margin-bottom:22px; overflow:hidden; }
-.panel-head { padding:16px 22px; border-bottom:1px solid var(--border-soft); }
-.panel-head h2 { font-size:15px; font-weight:600; margin:0 0 2px; }
-.panel-head p  { font-size:12.5px; color:var(--text-3); margin:0; }
-.panel-body { padding:22px; }
-.panel-foot { padding:14px 22px; border-top:1px solid var(--border-soft); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
-.panel-foot small { color:var(--text-3); font-size:12px; }
+.alert-banner { border-radius:var(--r-md); padding:12px 16px; font-size:13px; font-weight:500; margin-bottom:20px; display:flex; align-items:center; gap:10px; border:1px solid; border-left-width:4px; }
+.alert-banner.success { background:#f0fdf4; color:#15803d; border-color:#bbf7d0; border-left-color:#16a34a; }
+.alert-banner.error   { background:#fff5f5; color:#dc2626; border-color:#fecaca; border-left-color:#dc2626; }
+
+/* Section cards */
+.panel { background:var(--surface); border:1px solid var(--border); border-radius:20px; margin-bottom:24px; overflow:hidden; box-shadow:0 1px 2px rgba(16,24,40,.04); }
+.panel-head { display:flex; align-items:flex-start; gap:14px; padding:24px 28px 0; }
+.ph-icon { width:42px; height:42px; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; background:color-mix(in srgb, var(--accent) 12%, transparent); color:var(--accent); }
+.panel-head h2 { font-size:17px; font-weight:600; letter-spacing:-.2px; margin:0 0 3px; }
+.panel-head p  { font-size:12.5px; color:var(--text-2); margin:0; line-height:1.55; }
+.panel-body { padding:22px 28px 26px; }
+.panel-foot { padding:16px 28px; border-top:1px solid var(--border); background:color-mix(in srgb, var(--text) 2.5%, var(--surface)); display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; }
+.panel-foot small { color:var(--text-2); font-size:12px; display:inline-flex; align-items:center; gap:7px; }
 
 /* Theme cards */
-.theme-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; }
-.theme-card { position:relative; border:2px solid var(--border); border-radius:var(--r-md); padding:12px; cursor:pointer; transition:border-color .15s, box-shadow .15s; background:var(--surface); }
-.theme-card:hover { border-color:var(--text-3); }
+.theme-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
+.theme-card { position:relative; display:block; border:1.5px solid var(--border); border-radius:18px; padding:10px 10px 14px; cursor:pointer; transition:transform .18s, border-color .18s, box-shadow .18s; background:var(--surface); }
+.theme-card:hover { transform:translateY(-3px); border-color:var(--text-3); box-shadow:0 10px 24px -10px rgba(0,0,0,.18); }
 .theme-card input { position:absolute; opacity:0; pointer-events:none; }
-.theme-card.selected { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-light); }
-.tc-preview { height:96px; border-radius:var(--r-sm); border:1px solid var(--border); background:var(--bg); display:flex; overflow:hidden; margin-bottom:12px; }
-.tc-side { width:34%; padding:8px 7px; display:flex; flex-direction:column; gap:5px; border-bottom:3px solid; }
+.theme-card.selected { border-color:var(--accent); box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 16%, transparent); }
+
+.tc-preview { height:118px; border-radius:12px; border:1px solid var(--border); background:var(--bg); display:flex; overflow:hidden; margin-bottom:14px; }
+.tc-side { width:34%; padding:10px 9px; display:flex; flex-direction:column; gap:6px; border-bottom:3px solid; }
 .tc-side i { display:block; height:6px; border-radius:3px; background:rgba(255,255,255,.55); }
 .tc-side i:first-child { width:70%; background:rgba(255,255,255,.9); }
-.tc-main { flex:1; padding:8px; display:flex; flex-direction:column; gap:6px; }
+.tc-main { flex:1; padding:10px; display:flex; flex-direction:column; gap:7px; }
 .tc-main b { display:block; height:7px; width:55%; border-radius:3px; background:var(--border); }
-.tc-main em { display:block; height:18px; border-radius:5px; background:var(--surface); border:1px solid var(--border); }
-.tc-main span { display:block; height:14px; width:46px; border-radius:5px; margin-top:auto; }
-.tc-name { font-size:13.5px; font-weight:600; display:flex; align-items:center; justify-content:space-between; }
-.tc-note { font-size:11.5px; color:var(--text-3); margin-top:2px; }
-.tc-check { width:18px; height:18px; border-radius:50%; border:2px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:9px; color:transparent; }
-.theme-card.selected .tc-check { background:var(--accent); border-color:var(--accent); color:#fff; }
-.swatches { display:flex; gap:5px; margin-top:8px; }
-.swatches span { width:16px; height:16px; border-radius:50%; border:1px solid rgba(0,0,0,.12); }
+.tc-main em { display:block; height:20px; border-radius:6px; background:var(--surface); border:1px solid var(--border); }
+.tc-main span { display:block; height:15px; width:50px; border-radius:999px; margin-top:auto; }
+
+.tc-meta { padding:0 6px; }
+.tc-name { font-size:14px; font-weight:600; display:flex; align-items:center; justify-content:space-between; }
+.tc-note { font-size:11.5px; color:var(--text-3); margin-top:3px; }
+.tc-check { width:20px; height:20px; border-radius:50%; border:1.5px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:9px; color:transparent; transition:all .18s; }
+.theme-card.selected .tc-check { background:var(--accent); border-color:var(--accent); color:#fff; transform:scale(1.08); }
+.swatches { display:flex; gap:6px; margin-top:12px; }
+.swatches span { width:18px; height:18px; border-radius:50%; border:2px solid var(--surface); box-shadow:0 0 0 1px rgba(0,0,0,.12); }
 
 /* Mode segmented control */
-.seg { display:inline-flex; border:1px solid var(--border); border-radius:var(--r-sm); overflow:hidden; }
-.seg button { display:inline-flex; align-items:center; gap:8px; padding:10px 20px; font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; background:var(--surface); color:var(--text-2); border:none; border-right:1px solid var(--border); cursor:pointer; transition:all .15s; }
-.seg button:last-child { border-right:none; }
-.seg button:hover { background:var(--bg); }
-.seg button.active { background:var(--accent); color:#fff; }
+.seg { display:inline-flex; gap:4px; padding:4px; border-radius:999px; background:color-mix(in srgb, var(--text) 6%, var(--surface)); }
+.seg button { display:inline-flex; align-items:center; gap:8px; padding:10px 22px; font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; background:transparent; color:var(--text-2); border:none; border-radius:999px; cursor:pointer; transition:all .18s; }
+.seg button:hover { color:var(--text); }
+.seg button.active { background:var(--surface); color:var(--accent); font-weight:600; box-shadow:0 1px 3px rgba(0,0,0,.12), 0 1px 2px rgba(0,0,0,.06); }
 
-.m-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 18px; border-radius:var(--r-sm); font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; border:1px solid var(--accent); background:var(--accent); color:#fff; }
-.m-btn:hover { background:var(--accent-hover,#1d4ed8); }
+.m-btn { display:inline-flex; align-items:center; gap:8px; padding:11px 24px; border-radius:999px; font-size:13px; font-weight:600; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; border:none; background:var(--accent); color:#fff; transition:transform .12s, filter .15s, box-shadow .2s; box-shadow:0 6px 16px -6px color-mix(in srgb, var(--accent) 70%, transparent); }
+.m-btn:hover { filter:brightness(1.08); }
+.m-btn:active { transform:scale(.97); }
 
-@media (max-width:900px){ .theme-grid{grid-template-columns:1fr;} }
+@media (max-width:900px){ .theme-grid{grid-template-columns:1fr;} .content{padding:24px 16px;} .panel-head,.panel-body,.panel-foot{padding-left:20px;padding-right:20px;} }
+@media (min-width:901px) and (max-width:1200px){ .theme-grid{grid-template-columns:repeat(2,1fr);} }
 </style>
 <?= $themeHead ?>
 </head>
@@ -258,8 +268,11 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
       <input type="hidden" name="action" value="save_theme">
       <input type="hidden" name="csrf" value="<?= $_SESSION['csrf'] ?>">
       <div class="panel-head">
-        <h2>Color Theme</h2>
-        <p>Sets the sidebar, header and accent color for every admin page. Click a theme to preview it, then save.</p>
+        <div class="ph-icon"><i class="fas fa-swatchbook"></i></div>
+        <div>
+          <h2>Color Theme</h2>
+          <p>Sets the sidebar, header and accent color for every admin page. Click a theme to preview it, then save.</p>
+        </div>
       </div>
       <div class="panel-body">
         <div class="theme-grid">
@@ -270,12 +283,14 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
               <div class="tc-side" style="background:<?= $t['main'] ?>;border-color:<?= $t['bar'] ?>;"><i></i><i></i><i></i><i></i></div>
               <div class="tc-main"><b></b><em></em><span style="background:<?= $t['accent'] ?>;"></span></div>
             </div>
-            <div class="tc-name"><?= htmlspecialchars($t['name']) ?><span class="tc-check"><i class="fas fa-check"></i></span></div>
-            <div class="tc-note"><?= htmlspecialchars($t['note']) ?> · <?= strtoupper($t['main']) ?></div>
-            <div class="swatches">
-              <?php foreach (($t['family'] ?? [$t['main'], $t['bar'], $t['accent']]) as $c): ?>
-              <span style="background:<?= $c ?>;"></span>
-              <?php endforeach; ?>
+            <div class="tc-meta">
+              <div class="tc-name"><?= htmlspecialchars($t['name']) ?><span class="tc-check"><i class="fas fa-check"></i></span></div>
+              <div class="tc-note"><?= htmlspecialchars($t['note']) ?> · <?= strtoupper($t['main']) ?></div>
+              <div class="swatches">
+                <?php foreach (($t['family'] ?? [$t['main'], $t['bar'], $t['accent']]) as $c): ?>
+                <span style="background:<?= $c ?>;"></span>
+                <?php endforeach; ?>
+              </div>
             </div>
           </label>
           <?php endforeach; ?>
@@ -283,15 +298,18 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
       </div>
       <div class="panel-foot">
         <small><i class="fas fa-info-circle"></i> Applies to all administrators.</small>
-        <button type="submit" class="m-btn"><i class="fas fa-save" style="font-size:11px;"></i> Save Theme</button>
+        <button type="submit" class="m-btn"><i class="fas fa-check" style="font-size:11px;"></i> Save Theme</button>
       </div>
     </form>
 
     <!-- APPEARANCE -->
     <div class="panel">
       <div class="panel-head">
-        <h2>Appearance</h2>
-        <p>Choose light or dark mode. This is saved on this device only, so each admin can pick their own.</p>
+        <div class="ph-icon"><i class="fas fa-circle-half-stroke"></i></div>
+        <div>
+          <h2>Appearance</h2>
+          <p>Choose light or dark mode. This is saved on this device only, so each admin can pick their own.</p>
+        </div>
       </div>
       <div class="panel-body">
         <div class="seg" id="modeSeg">
