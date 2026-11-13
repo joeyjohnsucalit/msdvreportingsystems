@@ -738,7 +738,6 @@ function viewStudent(st){
                   <div class="info-cell"><div class="info-key">Department</div><div class="info-val">${escHtml(st.dept_name)}</div></div>
                   <div class="info-cell"><div class="info-key">Course</div><div class="info-val">${escHtml(st.course_name)}</div></div>
                   <div class="info-cell"><div class="info-key">Year Level</div><div class="info-val">Year ${escHtml(st.year_level)}</div></div>
-                  <div class="info-cell"><div class="info-key">Total Violations</div><div class="info-val">${viols.length}</div></div>
                 </div>
 
                 <div class="sec-lbl">Violation Records <span class="sec-count">${viols.length}</span></div>
