@@ -83,9 +83,43 @@ if($search){$where.=" AND (s.student_id LIKE ? OR s.full_name LIKE ?)";$params[]
 if($filterCourse){$where.=" AND s.course_id=?";$params[]=$filterCourse;}
 if($filterYear){$where.=" AND s.year_level=?";$params[]=$filterYear;}
 if($filterDept){$where.=" AND s.department_id=?";$params[]=$filterDept;}
+// ── Pagination: only one page of students is loaded from the database at a time ──
+$perPage = 20;   // every page holds 20 students
+$page = max(1, (int)($_GET['page'] ?? 1));
+
+// Total number of students matching the current search/filters
+$countStmt=$pdo->prepare("SELECT COUNT(*) FROM students s JOIN courses c ON s.course_id=c.id JOIN departments d ON s.department_id=d.id $where");
+$countStmt->execute($params);
+$totalStudents=(int)$countStmt->fetchColumn();
+$totalPages=max(1,(int)ceil($totalStudents/$perPage));
+if($page>$totalPages) $page=$totalPages;
+$offset=($page-1)*$perPage;   // $perPage and $offset are integers, so they are safe to put in the query
+
 // s.* includes profile_photo_path (a short path like image.php?id=42)
-$stmt=$pdo->prepare("SELECT s.*,c.name as course_name,d.name as dept_name,(SELECT COUNT(*) FROM violations v WHERE v.student_id=s.student_id) as total_violations FROM students s JOIN courses c ON s.course_id=c.id JOIN departments d ON s.department_id=d.id $where ORDER BY s.student_id");
+$stmt=$pdo->prepare("SELECT s.*,c.name as course_name,d.name as dept_name,(SELECT COUNT(*) FROM violations v WHERE v.student_id=s.student_id) as total_violations FROM students s JOIN courses c ON s.course_id=c.id JOIN departments d ON s.department_id=d.id $where ORDER BY s.student_id LIMIT $perPage OFFSET $offset");
 $stmt->execute($params);$students=$stmt->fetchAll();
+
+// Link to another page while keeping the current search and filters
+function pageUrl($p){ $q=$_GET; $q['page']=$p; return '?'.http_build_query($q); }
+
+// Page numbers to show: 1 … 4 5 [6] 7 8 … 20
+function pageWindow($cur,$total){
+    $pages=[1,$total];
+    for($i=$cur-2;$i<=$cur+2;$i++){ if($i>1&&$i<$total) $pages[]=$i; }
+    $pages=array_values(array_unique($pages)); sort($pages);
+    $out=[];$prev=0;
+    foreach($pages as $p){ if($p-$prev>1) $out[]='…'; $out[]=$p; $prev=$p; }
+    return $out;
+}
+// Initials for the avatar circle ("Dela Cruz, Juan" -> "DJ")
+function initials($name){
+    $w = preg_split('/[\s,]+/', trim((string)$name), -1, PREG_SPLIT_NO_EMPTY);
+    // mbstring may not be installed in every Docker image, so fall back to plain functions
+    $first = function($t){ return function_exists('mb_substr') ? mb_strtoupper(mb_substr($t,0,1)) : strtoupper(substr($t,0,1)); };
+    $r = $first($w[0] ?? '') . $first($w[1] ?? '');
+    return $r !== '' ? $r : '?';
+}
+
 function getRiskLevel($t){if($t>=5)return['label'=>'Critical','class'=>'danger','color'=>'#dc2626','bg'=>'#fff0f0'];if($t>=4)return['label'=>'High','class'=>'warning','color'=>'#d97706','bg'=>'#fffbeb'];if($t>=2)return['label'=>'Moderate','class'=>'info','color'=>'#2563eb','bg'=>'#eff4ff'];return['label'=>'Low','class'=>'success','color'=>'#16a34a','bg'=>'#f0fdf4'];}
 ?>
 <?php require_once 'theme-head.php'; ?>
@@ -99,7 +133,7 @@ function getRiskLevel($t){if($t>=5)return['label'=>'Critical','class'=>'danger',
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
 :root {
@@ -110,6 +144,7 @@ function getRiskLevel($t){if($t>=5)return['label'=>'Critical','class'=>'danger',
     --r-sm:8px; --r-md:12px; --r-lg:16px;
 }
 body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus Jakarta Sans',sans-serif; color:var(--text); }
+
 ::-webkit-scrollbar { width:0; }
 
 /* ── SIDEBAR (unchanged) ── */
@@ -176,129 +211,193 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 /* ── CONTENT ── */
 .content { margin-top:60px; padding:28px 32px 40px; flex:1; }
 
+@keyframes fadeUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:none; } }
+@keyframes spin   { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { * { animation:none !important; transition:none !important; } }
+
 /* Alert banners */
-.alert-banner { border-radius:var(--r-md); padding:12px 16px; font-size:13px; font-weight:500; margin-bottom:16px; display:flex; align-items:center; gap:10px; border:none; }
+.alert-banner { border-radius:var(--r-md); padding:12px 16px; font-size:13px; font-weight:500; margin-bottom:16px; display:flex; align-items:center; gap:10px; border:none; animation:fadeUp .3s ease both; }
 .alert-banner.success { background:#f0fdf4; color:#15803d; }
 .alert-banner.error   { background:#fff0f0; color:#dc2626; }
 .alert-banner i { flex-shrink:0; }
 
 /* Filter bar */
-.filter-bar { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); padding:16px 20px; margin-bottom:20px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
+.filter-bar { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); padding:14px 16px; margin-bottom:18px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; animation:fadeUp .45s ease both; }
+.search-wrap { position:relative; flex:1 1 260px; min-width:200px; }
+.search-wrap i { position:absolute; left:13px; top:50%; transform:translateY(-50%); color:var(--text-3); font-size:12px; pointer-events:none; }
 .filter-input, .filter-select {
     font-size:13px; padding:8px 12px; border-radius:var(--r-sm);
-    border:1px solid var(--border); background:#fff; color:var(--text);
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
     font-family:'Plus Jakarta Sans',sans-serif; outline:none;
-    transition:border-color 0.15s; height:36px;
+    transition:border-color .15s, box-shadow .15s; height:38px;
 }
-.filter-input:focus, .filter-select:focus { border-color:var(--accent); }
-.filter-input { min-width:200px; }
-.filter-select { appearance:none; -webkit-appearance:none; padding-right:28px; cursor:pointer;
+.filter-input:focus, .filter-select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(37,99,235,0.09); }
+.search-wrap .filter-input { width:100%; padding-left:34px; }
+.filter-select { appearance:none; -webkit-appearance:none; padding-right:30px; cursor:pointer; max-width:200px;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239ca3af' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-    background-repeat:no-repeat; background-position:right 8px center; background-color:#fff;
+    background-repeat:no-repeat; background-position:right 10px center; background-color:var(--surface);
 }
-.filter-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:var(--r-sm); font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all 0.15s; height:36px; border:1px solid; }
+.filter-btn { display:inline-flex; align-items:center; justify-content:center; gap:6px; padding:8px 16px; border-radius:var(--r-sm); font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all .15s; height:38px; border:1px solid; text-decoration:none; }
 .filter-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-.filter-btn.primary:hover { background:#1d4ed8; }
-.filter-btn.secondary { background:#fff; color:var(--text-2); border-color:var(--border); text-decoration:none; }
-.filter-btn.secondary:hover { background:var(--bg); }
-
-/* Count badge */
-.count-badge { font-size:12px; color:var(--text-3); margin-bottom:10px; }
-.count-badge strong { color:var(--text); }
+.filter-btn.primary:hover { filter:brightness(.92); transform:translateY(-1px); }
+.filter-btn.secondary { background:var(--surface); color:var(--text-2); border-color:var(--border); }
+.filter-btn.secondary:hover { background:var(--bg); color:var(--text); }
 
 /* ── TABLE ── */
-.table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; }
-.data-table { width:100%; border-collapse:collapse; font-size:13px; }
-.data-table thead tr { border-bottom:1px solid var(--border); }
-.data-table thead th { padding:11px 16px; font-size:10.5px; font-weight:600; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-3); background:var(--bg); white-space:nowrap; }
-.data-table tbody tr { border-bottom:1px solid var(--border-soft); transition:background 0.1s; }
-.data-table tbody tr:last-child { border-bottom:none; }
-.data-table tbody tr:hover { background:#fafbfc; }
-.data-table td { padding:13px 16px; color:var(--text); vertical-align:middle; }
-.data-table td.sid { font-weight:600; font-family:monospace; font-size:12.5px; color:var(--accent); letter-spacing:0.2px; }
-.data-table td.name { font-weight:500; }
+.table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden; box-shadow:0 1px 2px rgba(16,24,40,.04); animation:fadeUp .5s ease both; }
+.table-scroll { overflow-x:auto; }
+.data-table { width:100%; border-collapse:separate; border-spacing:0; font-size:13px; min-width:880px; }
+.data-table thead th { padding:13px 18px; font-size:10.5px; font-weight:700; letter-spacing:.7px; text-transform:uppercase; color:var(--text-3); background:#fafbfc; white-space:nowrap; text-align:left; border-bottom:1px solid var(--border); }
+.data-table tbody td { padding:12px 18px; color:var(--text); vertical-align:middle; border-bottom:1px solid var(--border-soft); transition:background .12s; }
+.data-table tbody tr:last-child td { border-bottom:none; }
+.data-table tbody tr:hover td { background:#f8faff; }
 .data-table td.muted { color:var(--text-2); }
-.empty-row td { padding:40px 16px; text-align:center; color:var(--text-3); font-size:13px; }
+.data-table td.actions { text-align:right; white-space:nowrap; }
 
-/* Risk badge */
-.risk-badge { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600; padding:3px 10px; border-radius:20px; }
-.risk-badge .dot { width:5px; height:5px; border-radius:50%; }
+/* Student cell */
+.sid { font-family:monospace; font-size:12.5px; color:var(--accent); letter-spacing:.3px; white-space:nowrap; }
+.fname { font-weight:600; color:var(--text); min-width:200px; }
+.avatar { width:38px; height:38px; border-radius:50%; background:linear-gradient(135deg,#dbe7ff,#eff4ff); color:var(--accent); font-size:12px; font-weight:700; letter-spacing:.3px; display:flex; align-items:center; justify-content:center; flex-shrink:0; border:1px solid #cfdcff; }
+.stu-name { font-weight:600; color:var(--text); line-height:1.25; }
+.stu-id   { font-family:monospace; font-size:11.5px; color:var(--text-3); margin-top:2px; letter-spacing:.2px; }
 
-/* Action btn */
-.view-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:var(--r-sm); font-size:12px; font-weight:500; border:1px solid var(--border); background:#fff; color:var(--text-2); cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; transition:all 0.15s; }
-.view-btn:hover { background:var(--accent-light); color:var(--accent); border-color:#c7d7f8; }
+/* Pills */
+.year-pill { display:inline-flex; align-items:center; font-size:11.5px; font-weight:600; padding:3px 10px; border-radius:20px; background:var(--bg); color:var(--text-2); border:1px solid var(--border); }
+.risk-badge { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:600; padding:4px 11px; border-radius:20px; }
+.risk-badge .dot { width:6px; height:6px; border-radius:50%; }
+
+/* Row action */
+.view-btn { display:inline-flex; align-items:center; gap:6px; padding:7px 13px; border-radius:var(--r-sm); font-size:12px; font-weight:500; border:1px solid var(--border); background:var(--surface); color:var(--text-2); cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; transition:all .15s; }
+.view-btn:hover { background:var(--accent-light); color:var(--accent); border-color:var(--accent); transform:translateY(-1px); }
+
+/* Empty state */
+.empty-state { padding:56px 16px; text-align:center; color:var(--text-3); }
+.empty-state .ei { width:60px; height:60px; border-radius:50%; background:var(--bg); display:inline-flex; align-items:center; justify-content:center; font-size:22px; margin-bottom:12px; }
+.empty-state h4 { font-size:14px; font-weight:600; color:var(--text); margin:0 0 4px; }
+.empty-state p  { font-size:12.5px; margin:0; }
+
+/* ── TABLE FOOTER + PAGINATION ── */
+.table-foot {
+    display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    padding:14px 18px; background:#fafbfc; border-top:1px solid var(--border);
+}
+.foot-info { font-size:12.5px; color:var(--text-3); }
+.foot-info strong { color:var(--text); font-weight:600; }
+
+.pager { display:flex; align-items:center; gap:6px; flex-wrap:wrap; }
+.pg-btn {
+    min-width:36px; height:36px; padding:0 11px;
+    display:inline-flex; align-items:center; justify-content:center;
+    border:1px solid var(--border); border-radius:10px;
+    background:var(--surface); color:var(--text-2);
+    font-size:13px; font-weight:600; text-decoration:none;
+    transition:all .15s;
+}
+.pg-btn:hover { background:var(--accent-light); color:var(--accent); border-color:var(--accent); transform:translateY(-1px); }
+.pg-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 4px 12px rgba(37,99,235,.35); pointer-events:none; }
+.pg-btn.disabled { opacity:.4; pointer-events:none; }
+.pg-gap { color:var(--text-3); padding:0 4px; font-size:13px; }
 
 /* ── MODALS ── */
-.modal-content { border:1px solid var(--border); border-radius:var(--r-lg); box-shadow:0 16px 48px rgba(0,0,0,0.12); font-family:'Plus Jakarta Sans',sans-serif; overflow:hidden; }
-.modal-header { padding:20px 24px 16px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; justify-content:space-between; }
-.modal-header .modal-title { font-size:16px; font-weight:600; color:var(--text); letter-spacing:-0.2px; }
+.modal-content { border:1px solid var(--border); border-radius:var(--r-lg); box-shadow:0 20px 56px rgba(0,0,0,0.16); font-family:'Plus Jakarta Sans',sans-serif; overflow:hidden; background:var(--surface); color:var(--text); }
+.modal-header { padding:18px 24px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; justify-content:space-between; }
+.modal-header .modal-title { font-size:16px; font-weight:600; color:var(--text); letter-spacing:-0.2px; display:flex; align-items:center; gap:10px; }
+.modal-header .modal-title .mt-ic { width:30px; height:30px; border-radius:9px; background:var(--accent-light); color:var(--accent); display:inline-flex; align-items:center; justify-content:center; font-size:13px; }
 .modal-header.danger-head { background:#fff0f0; }
 .modal-header.danger-head .modal-title { color:#dc2626; }
 .modal-header .btn-close { opacity:0.4; }
-.modal-header .btn-close:hover { opacity:0.7; }
-.modal-body { padding:20px 24px; }
-.modal-footer { padding:14px 24px; border-top:1px solid var(--border-soft); display:flex; justify-content:flex-end; gap:8px; background:#fafbfc; }
+.modal-header .btn-close:hover { opacity:0.8; }
+.modal-body { padding:22px 24px; }
+.modal-footer { padding:14px 24px; border-top:1px solid var(--border-soft); display:flex; justify-content:flex-end; gap:8px; background:var(--bg); }
+
+/* Profile hero (student modal) */
+.profile-hero { display:flex; align-items:center; gap:18px; padding:18px; border:1px solid var(--border); border-radius:var(--r-md); background:linear-gradient(135deg, var(--accent-light), var(--surface) 70%); margin-bottom:16px; }
+.hero-photo, .hero-initials { width:92px; height:92px; border-radius:20px; flex-shrink:0; }
+.hero-photo { object-fit:cover; border:3px solid var(--surface); box-shadow:0 6px 18px rgba(0,0,0,0.14); }
+.hero-initials { background:var(--accent); color:#fff; font-size:30px; font-weight:600; letter-spacing:1px; display:flex; align-items:center; justify-content:center; box-shadow:0 6px 18px rgba(0,0,0,0.14); }
+.hero-name { font-size:19px; font-weight:600; letter-spacing:-0.3px; color:var(--text); line-height:1.25; }
+.hero-id   { font-family:monospace; font-size:13px; color:var(--accent); letter-spacing:.5px; margin:3px 0 10px; }
+.hero-tags { display:flex; gap:6px; flex-wrap:wrap; align-items:center; }
+
+/* Info cards */
+.info-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; margin-bottom:22px; }
+.info-cell { border:1px solid var(--border); border-radius:var(--r-md); padding:12px 14px; background:var(--surface); }
+.info-key { font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-3); margin-bottom:4px; }
+.info-val { font-size:13.5px; color:var(--text); font-weight:500; line-height:1.4; }
+
+/* Section label */
+.sec-lbl { display:flex; align-items:center; gap:8px; font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-3); margin-bottom:10px; }
+.sec-count { background:var(--bg); border:1px solid var(--border); color:var(--text-2); font-size:10.5px; padding:1px 8px; border-radius:20px; letter-spacing:0; }
+
+/* Violations table */
+.viol-box { border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; }
+.viol-scroll { overflow-x:auto; }
+.viol-table { width:100%; border-collapse:collapse; font-size:12.5px; min-width:640px; }
+.viol-table th { padding:9px 12px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.5px; color:var(--text-3); background:var(--bg); border-bottom:1px solid var(--border); text-align:left; }
+.viol-table td { padding:11px 12px; border-bottom:1px solid var(--border-soft); color:var(--text-2); vertical-align:top; }
+.viol-table tr:last-child td { border-bottom:none; }
+.viol-table tbody tr:hover { background:var(--bg); }
+.viol-empty { text-align:center; padding:30px 16px; color:var(--text-3); font-size:12.5px; }
+.viol-empty i { display:block; font-size:20px; margin-bottom:8px; }
+
+.loading-state { text-align:center; padding:44px 16px; color:var(--text-3); font-size:13px; }
+.spinner { width:26px; height:26px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; margin:0 auto 12px; animation:spin .8s linear infinite; }
 
 /* Form elements inside modals */
+.f-row { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
 .f-group { margin-bottom:16px; }
 .f-group:last-child { margin-bottom:0; }
-.f-label { display:block; font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px; }
+.f-label { display:block; font-size:11.5px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px; }
 .f-input, .f-select {
-    width:100%; padding:9px 12px; border-radius:var(--r-sm);
-    border:1px solid var(--border); background:#fff; color:var(--text);
+    width:100%; padding:10px 12px; border-radius:var(--r-sm);
+    border:1px solid var(--border); background:var(--surface); color:var(--text);
     font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif;
-    outline:none; transition:border-color 0.15s; box-sizing:border-box;
+    outline:none; transition:border-color .15s, box-shadow .15s; box-sizing:border-box;
 }
-.f-input:focus, .f-select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(37,99,235,0.08); }
+.f-input:focus, .f-select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(37,99,235,0.09); }
 .f-hint { font-size:11px; color:var(--text-3); margin-top:4px; }
 .f-select { appearance:none; -webkit-appearance:none; cursor:pointer;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239ca3af' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-    background-repeat:no-repeat; background-position:right 10px center; padding-right:30px;
+    background-repeat:no-repeat; background-position:right 12px center; padding-right:32px;
 }
 
+/* Delete confirmation */
+.danger-icon { width:56px; height:56px; border-radius:50%; background:#fff0f0; color:#dc2626; display:flex; align-items:center; justify-content:center; font-size:22px; margin:0 auto 14px; }
+
 /* Modal buttons */
-.m-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 18px; border-radius:var(--r-sm); font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all 0.15s; border:1px solid; }
-.m-btn.ghost   { background:#fff; color:var(--text-2); border-color:var(--border); }
+.m-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 18px; border-radius:var(--r-sm); font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all .15s; border:1px solid; }
+.m-btn:hover { transform:translateY(-1px); }
+.m-btn.ghost   { background:var(--surface); color:var(--text-2); border-color:var(--border); }
 .m-btn.ghost:hover { background:var(--bg); }
 .m-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-.m-btn.primary:hover { background:#1d4ed8; }
+.m-btn.primary:hover { filter:brightness(.92); }
 .m-btn.warn    { background:#fffbeb; color:#92400e; border-color:#fcd34d; }
 .m-btn.warn:hover { background:#fef3c7; }
 .m-btn.danger  { background:#dc2626; color:#fff; border-color:#dc2626; }
 .m-btn.danger:hover { background:#b91c1c; }
-.m-btn.info-btn { background:#eff4ff; color:var(--accent); border-color:#c7d7f8; }
-.m-btn.info-btn:hover { background:#dbeafe; }
-
-/* View modal info grid */
-.info-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; margin-bottom:20px; }
-.info-cell { padding:11px 14px; border-bottom:1px solid var(--border-soft); }
-.info-cell:nth-last-child(-n+2) { border-bottom:none; }
-.info-key { font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-3); margin-bottom:3px; }
-.info-val { font-size:13.5px; color:var(--text); font-weight:500; }
-.info-val.sid-val { font-family:monospace; color:var(--accent); letter-spacing:0.5px; }
-
-/* Profile photo block in the student modal */
-.profile-photo-box { display:flex; align-items:center; gap:14px; margin-bottom:16px; }
-.profile-photo-box img { width:96px; height:96px; object-fit:cover; border-radius:var(--r-md); border:1px solid var(--border); }
-.profile-photo-box .no-photo { width:96px; height:96px; border-radius:var(--r-md); border:1px dashed var(--border); background:var(--bg); display:flex; align-items:center; justify-content:center; color:var(--text-3); font-size:11px; text-align:center; padding:6px; }
-
-/* View modal section label */
-.sec-lbl { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.8px; color:var(--text-3); margin-bottom:10px; }
-
-/* Violation mini-table */
-.viol-table { width:100%; border-collapse:collapse; font-size:12.5px; }
-.viol-table th { padding:8px 10px; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-3); background:var(--bg); border-bottom:1px solid var(--border); }
-.viol-table td { padding:9px 10px; border-bottom:1px solid var(--border-soft); color:var(--text-2); vertical-align:middle; }
-.viol-table tr:last-child td { border-bottom:none; }
-.viol-table tbody tr:hover { background:#fafbfc; }
+.m-btn.info-btn { background:var(--accent-light); color:var(--accent); border-color:var(--accent); }
+.m-btn.info-btn:hover { filter:brightness(.97); }
 
 /* Mini badge */
-.mini-badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px; font-size:10.5px; font-weight:600; }
+.mini-badge { display:inline-flex; align-items:center; padding:2px 9px; border-radius:20px; font-size:10.5px; font-weight:600; text-transform:capitalize; }
 .mini-badge.minor  { background:#eff4ff; color:#2563eb; }
 .mini-badge.major  { background:#fff0f0; color:#dc2626; }
 .mini-badge.completed { background:#f0fdf4; color:#16a34a; }
 .mini-badge.ongoing   { background:#fffbeb; color:#d97706; }
 .mini-badge.pending   { background:#f4f5f7; color:#6b7280; }
+
+/* Small screens */
+@media (max-width: 768px) {
+    .content { padding:20px 16px 32px; }
+    .f-row { grid-template-columns:1fr; }
+    .profile-hero { flex-direction:column; text-align:center; }
+    .hero-tags { justify-content:center; }
+    .filter-select { max-width:none; flex:1 1 140px; }
+    .table-foot { justify-content:center; text-align:center; padding:10px 12px; }
+    .foot-info  { width:100%; }
+    .pager      { justify-content:center; }
+    .pg-btn     { min-width:32px; height:32px; padding:0 8px; font-size:12px; }
+}
 </style>
 </head>
 <body>
@@ -377,15 +476,18 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
   <div class="content">
 
     <?php if(isset($_SESSION['msg'])): ?>
-    <div class="alert-banner success"><i class="fas fa-check-circle"></i><?= $_SESSION['msg'] ?><?php unset($_SESSION['msg']); ?></div>
+    <div class="alert-banner success"><i class="fas fa-check-circle"></i><?= htmlspecialchars($_SESSION['msg']) ?><?php unset($_SESSION['msg']); ?></div>
     <?php endif; ?>
     <?php if(isset($_SESSION['err'])): ?>
-    <div class="alert-banner error"><i class="fas fa-exclamation-circle"></i><?= $_SESSION['err'] ?><?php unset($_SESSION['err']); ?></div>
+    <div class="alert-banner error"><i class="fas fa-exclamation-circle"></i><?= htmlspecialchars($_SESSION['err']) ?><?php unset($_SESSION['err']); ?></div>
     <?php endif; ?>
 
     <!-- Filter bar -->
     <form method="GET" class="filter-bar">
-      <input type="text" name="search" class="filter-input" placeholder="Search by ID or name…" value="<?= htmlspecialchars($search) ?>">
+      <div class="search-wrap">
+        <i class="fas fa-search"></i>
+        <input type="text" name="search" class="filter-input" placeholder="Search by ID or name…" value="<?= htmlspecialchars($search) ?>">
+      </div>
       <select name="dept" class="filter-select">
         <option value="">All Departments</option>
         <?php foreach($departments as $d): ?><option value="<?=$d['id']?>" <?=$filterDept==$d['id']?'selected':''?>><?= htmlspecialchars($d['name']) ?></option><?php endforeach; ?>
@@ -399,45 +501,69 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
         <?php for($i=1;$i<=4;$i++): ?><option value="<?=$i?>" <?=$filterYear==$i?'selected':''?>>Year <?=$i?></option><?php endfor; ?>
       </select>
       <button type="submit" class="filter-btn primary"><i class="fas fa-search" style="font-size:11px;"></i> Search</button>
-      <a href="student-records.php" class="filter-btn secondary">Reset</a>
+      <a href="student-records.php" class="filter-btn secondary"><i class="fas fa-rotate-left" style="font-size:11px;"></i> Reset</a>
     </form>
 
     <!-- Table -->
-    <div class="count-badge">Showing <strong><?= count($students) ?></strong> student<?= count($students)!==1?'s':'' ?></div>
     <div class="table-wrap">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th>Student ID</th>
-            <th>Full Name</th>
-            <th>Department</th>
-            <th>Course</th>
-            <th>Year</th>
-            <th>Risk Level</th>
-            <th style="width:80px;"></th>
-          </tr>
-        </thead>
-        <tbody>
-          <?php if(empty($students)): ?>
-          <tr class="empty-row"><td colspan="7"><i class="fas fa-users" style="font-size:20px;display:block;margin-bottom:8px;"></i>No students found</td></tr>
-          <?php else: foreach($students as $st): $risk=getRiskLevel($st['total_violations']); ?>
-          <tr>
-            <td class="sid"><?= htmlspecialchars($st['student_id']) ?></td>
-            <td class="name"><?= htmlspecialchars($st['full_name']) ?></td>
-            <td class="muted"><?= htmlspecialchars($st['dept_name']) ?></td>
-            <td class="muted"><?= htmlspecialchars($st['course_name']) ?></td>
-            <td class="muted">Year <?= $st['year_level'] ?></td>
-            <td>
-              <span class="risk-badge" style="background:<?= $risk['bg'] ?>;color:<?= $risk['color'] ?>;">
-                <span class="dot" style="background:<?= $risk['color'] ?>;"></span>
-                <?= $risk['label'] ?>
-              </span>
-            </td>
-            <td><button class="view-btn" onclick='viewStudent(<?= json_encode($st) ?>)'><i class="fas fa-eye" style="font-size:11px;"></i> View</button></td>
-          </tr>
-          <?php endforeach; endif; ?>
-        </tbody>
-      </table>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Student ID</th>
+              <th>Full Name</th>
+              <th>Department</th>
+              <th>Course</th>
+              <th>Year</th>
+              <th>Risk Level</th>
+              <th style="width:100px;"></th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php if(empty($students)): ?>
+            <tr><td colspan="7">
+              <div class="empty-state">
+                <div class="ei"><i class="fas fa-user-slash"></i></div>
+                <h4>No students found</h4>
+                <p>Try a different search or clear the filters.</p>
+              </div>
+            </td></tr>
+            <?php else: foreach($students as $st): $risk=getRiskLevel($st['total_violations']); ?>
+            <tr>
+              <td class="sid"><?= htmlspecialchars($st['student_id']) ?></td>
+              <td class="fname"><?= htmlspecialchars($st['full_name']) ?></td>
+              <td class="muted"><?= htmlspecialchars($st['dept_name']) ?></td>
+              <td class="muted"><?= htmlspecialchars($st['course_name']) ?></td>
+              <td><span class="year-pill">Year <?= (int)$st['year_level'] ?></span></td>
+              <td>
+                <span class="risk-badge" style="background:<?= $risk['bg'] ?>;color:<?= $risk['color'] ?>;">
+                  <span class="dot" style="background:<?= $risk['color'] ?>;"></span>
+                  <?= $risk['label'] ?>
+                </span>
+              </td>
+              <td class="actions"><button class="view-btn" onclick='viewStudent(<?= json_encode($st, JSON_HEX_APOS|JSON_HEX_QUOT|JSON_HEX_AMP|JSON_HEX_TAG) ?>)'><i class="fas fa-eye" style="font-size:11px;"></i> View</button></td>
+            </tr>
+            <?php endforeach; endif; ?>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-foot">
+        <div class="foot-info">
+          <?php if($totalStudents>0): ?>Showing <strong><?= $offset+1 ?>–<?= $offset+count($students) ?></strong> of <strong><?= $totalStudents ?></strong> student<?= $totalStudents!==1?'s':'' ?> · Page <strong><?= $page ?></strong> of <strong><?= $totalPages ?></strong>
+          <?php else: ?>No students to show<?php endif; ?>
+        </div>
+        <div class="pager">
+          <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pageUrl(1)) ?>" aria-label="First page"><i class="fas fa-angles-left" style="font-size:10px;"></i></a>
+          <a class="pg-btn <?= $page<=1?'disabled':'' ?>" href="<?= $page<=1?'#':htmlspecialchars(pageUrl($page-1)) ?>" aria-label="Previous page"><i class="fas fa-chevron-left" style="font-size:10px;"></i></a>
+          <?php foreach(pageWindow($page,$totalPages) as $p): ?>
+            <?php if($p==='…'): ?><span class="pg-gap">…</span>
+            <?php else: ?><a class="pg-btn <?= $p==$page?'active':'' ?>" href="<?= htmlspecialchars(pageUrl($p)) ?>"><?= $p ?></a><?php endif; ?>
+          <?php endforeach; ?>
+          <a class="pg-btn <?= $page>=$totalPages?'disabled':'' ?>" href="<?= $page>=$totalPages?'#':htmlspecialchars(pageUrl($page+1)) ?>" aria-label="Next page"><i class="fas fa-chevron-right" style="font-size:10px;"></i></a>
+          <a class="pg-btn <?= $page>=$totalPages?'disabled':'' ?>" href="<?= $page>=$totalPages?'#':htmlspecialchars(pageUrl($totalPages)) ?>" aria-label="Last page"><i class="fas fa-angles-right" style="font-size:10px;"></i></a>
+        </div>
+      </div>
     </div>
 
   </div><!-- /content -->
@@ -448,11 +574,11 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
   <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <span class="modal-title">Student Profile</span>
+        <span class="modal-title"><span class="mt-ic"><i class="fas fa-user-graduate"></i></span>Student Profile</span>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
-      <div class="modal-body" id="viewModalBody" style="padding:20px 24px;">
-        <div style="text-align:center;padding:30px;color:var(--text-3);">Loading…</div>
+      <div class="modal-body" id="viewModalBody">
+        <div class="loading-state"><div class="spinner"></div>Loading…</div>
       </div>
       <div class="modal-footer">
         <button class="m-btn info-btn" id="editBtnModal"><i class="fas fa-pencil-alt" style="font-size:11px;"></i> Edit</button>
@@ -470,7 +596,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
       <input type="hidden" name="action" value="edit">
       <input type="hidden" name="student_id" id="editSID">
       <div class="modal-header">
-        <span class="modal-title">Edit Student</span>
+        <span class="modal-title"><span class="mt-ic"><i class="fas fa-pencil-alt"></i></span>Edit Student</span>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
@@ -478,22 +604,24 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
           <label class="f-label">Full Name</label>
           <input type="text" name="full_name" id="editName" class="f-input" required>
         </div>
-        <div class="f-group">
-          <label class="f-label">Department</label>
-          <select name="department_id" id="editDept" class="f-select" required onchange="filterCoursesByDept(this.value,'editCourse')">
-            <?php foreach($departments as $d): ?><option value="<?=$d['id']?>"><?= htmlspecialchars($d['name']) ?></option><?php endforeach; ?>
-          </select>
+        <div class="f-row">
+          <div class="f-group">
+            <label class="f-label">Department</label>
+            <select name="department_id" id="editDept" class="f-select" required onchange="filterCoursesByDept(this.value,'editCourse')">
+              <?php foreach($departments as $d): ?><option value="<?=$d['id']?>"><?= htmlspecialchars($d['name']) ?></option><?php endforeach; ?>
+            </select>
+          </div>
+          <div class="f-group">
+            <label class="f-label">Year Level</label>
+            <select name="year_level" id="editYear" class="f-select" required>
+              <?php for($i=1;$i<=4;$i++): ?><option value="<?=$i?>">Year <?=$i?></option><?php endfor; ?>
+            </select>
+          </div>
         </div>
         <div class="f-group">
           <label class="f-label">Course</label>
           <select name="course_id" id="editCourse" class="f-select" required>
             <?php foreach($courses as $c): ?><option value="<?=$c['id']?>"><?= htmlspecialchars($c['name']) ?></option><?php endforeach; ?>
-          </select>
-        </div>
-        <div class="f-group">
-          <label class="f-label">Year Level</label>
-          <select name="year_level" id="editYear" class="f-select" required>
-            <?php for($i=1;$i<=4;$i++): ?><option value="<?=$i?>">Year <?=$i?></option><?php endfor; ?>
           </select>
         </div>
       </div>
@@ -512,11 +640,12 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
       <input type="hidden" name="action" value="delete">
       <input type="hidden" name="student_id" id="deleteSID">
       <div class="modal-header danger-head">
-        <span class="modal-title"><i class="fas fa-exclamation-triangle" style="margin-right:8px;font-size:14px;"></i>Delete Student</span>
+        <span class="modal-title"><i class="fas fa-exclamation-triangle" style="font-size:14px;"></i>Delete Student</span>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
-        <p style="font-size:13.5px;color:var(--text-2);margin-bottom:16px;line-height:1.6;">This will permanently remove the student and their user account. This action cannot be undone.</p>
+        <div class="danger-icon"><i class="fas fa-user-xmark"></i></div>
+        <p style="font-size:13.5px;color:var(--text-2);margin-bottom:18px;line-height:1.6;text-align:center;">This will permanently remove the student, their user account, violations and photos. This action cannot be undone.</p>
         <div class="f-group" style="margin:0;">
           <label class="f-label">Deletion Password</label>
           <input type="password" name="del_password" class="f-input" placeholder="Enter deletion password…" required>
@@ -550,79 +679,73 @@ function getRiskBadge(totalViolations){
     return            {label:'Low',   color:'#16a34a',bg:'#f0fdf4'};
 }
 
+function initials(name){
+    const w = String(name||'').replace(/,/g,' ').split(/\s+/).filter(Boolean);
+    return (((w[0]||'')[0]||'') + ((w[1]||'')[0]||'')).toUpperCase() || '?';
+}
+
 function viewStudent(st){
     const modal = new bootstrap.Modal(document.getElementById('viewStudentModal'));
-    document.getElementById('viewModalBody').innerHTML = '<div style="text-align:center;padding:30px;color:var(--text-3);">Loading…</div>';
+    const body  = document.getElementById('viewModalBody');
+    body.innerHTML = '<div class="loading-state"><div class="spinner"></div>Loading…</div>';
+    document.getElementById('editBtnModal').onclick   = () => openEdit(st);
+    document.getElementById('deleteBtnModal').onclick = () => openDelete(st.student_id);
     modal.show();
 
     fetch('ajax/student-violations.php?student_id=' + encodeURIComponent(st.student_id))
         .then(r => r.json()).then(viols => {
             const risk = getRiskBadge(st.total_violations);
-            const vRows = viols.length === 0
-                ? '<tr><td colspan="6" style="text-align:center;padding:24px;color:var(--text-3);font-size:12.5px;">No violations recorded.</td></tr>'
-                : viols.map(v => `
-                    <tr>
-                      <td>${v.date_submitted}</td>
-                      <td><span class="mini-badge ${v.category}">${v.category}</span></td>
-                      <td style="font-weight:500;">${v.violation}</td>
-                      <td style="color:var(--text-3);">${v.description||'—'}</td>
-                      <td><span class="mini-badge ${v.status}">${v.status}</span></td>
-                      <td style="color:var(--text-3);">${v.sanction||'—'}</td>
-                    </tr>`).join('');
+            const ini  = escHtml(initials(st.full_name));
+
+            const vRows = viols.map(v => `
+                <tr>
+                  <td style="white-space:nowrap;">${escHtml(v.date_submitted)}</td>
+                  <td><span class="mini-badge ${escHtml(v.category)}">${escHtml(v.category)}</span></td>
+                  <td style="font-weight:600;color:var(--text);">${escHtml(v.violation)}</td>
+                  <td>${escHtml(v.description||'—')}</td>
+                  <td><span class="mini-badge ${escHtml(v.status)}">${escHtml(v.status)}</span></td>
+                  <td>${escHtml(v.sanction||'—')}</td>
+                </tr>`).join('');
+
+            const violBlock = viols.length === 0
+                ? '<div class="viol-empty"><i class="fas fa-circle-check"></i>No violations recorded.</div>'
+                : `<div class="viol-scroll"><table class="viol-table">
+                     <thead><tr><th>Date</th><th>Type</th><th>Violation</th><th>Description</th><th>Status</th><th>Sanction</th></tr></thead>
+                     <tbody>${vRows}</tbody></table></div>`;
 
             const photo = st.profile_photo_path
-                ? `<div class="profile-photo-box">
-                     <img src="../${escHtml(st.profile_photo_path)}" alt="Profile photo">
-                     <div><div class="info-key">Profile Photo</div>
-                     <div style="font-size:12px;color:var(--text-3);">Uploaded during enrollment</div></div>
-                   </div>`
-                : `<div class="profile-photo-box">
-                     <div class="no-photo">No profile photo</div>
-                   </div>`;
+                ? `<img class="hero-photo" src="../${escHtml(st.profile_photo_path)}" alt=""
+                        onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+                   <div class="hero-initials" style="display:none;">${ini}</div>`
+                : `<div class="hero-initials">${ini}</div>`;
 
-            document.getElementById('viewModalBody').innerHTML = `
-                ${photo}
-                <div class="info-grid">
-                  <div class="info-cell">
-                    <div class="info-key">Student ID</div>
-                    <div class="info-val sid-val">${st.student_id}</div>
-                  </div>
-                  <div class="info-cell">
-                    <div class="info-key">Full Name</div>
-                    <div class="info-val">${st.full_name}</div>
-                  </div>
-                  <div class="info-cell">
-                    <div class="info-key">Department</div>
-                    <div class="info-val">${st.dept_name}</div>
-                  </div>
-                  <div class="info-cell">
-                    <div class="info-key">Course</div>
-                    <div class="info-val">${st.course_name}</div>
-                  </div>
-                  <div class="info-cell">
-                    <div class="info-key">Year Level</div>
-                    <div class="info-val">Year ${st.year_level}</div>
-                  </div>
-                  <div class="info-cell">
-                    <div class="info-key">Risk Level</div>
-                    <div class="info-val">
+            body.innerHTML = `
+                <div class="profile-hero">
+                  ${photo}
+                  <div>
+                    <div class="hero-name">${escHtml(st.full_name)}</div>
+                    <div class="hero-id">${escHtml(st.student_id)}</div>
+                    <div class="hero-tags">
+                      <span class="year-pill">Year ${escHtml(st.year_level)}</span>
                       <span class="risk-badge" style="background:${risk.bg};color:${risk.color};">
-                        <span class="dot" style="background:${risk.color};"></span>
-                        ${risk.label}
+                        <span class="dot" style="background:${risk.color};"></span>${risk.label}
                       </span>
                     </div>
                   </div>
                 </div>
-                <div class="sec-lbl">Violation Records</div>
-                <div style="border:1px solid var(--border);border-radius:var(--r-md);overflow:hidden;">
-                  <table class="viol-table">
-                    <thead><tr><th>Date</th><th>Type</th><th>Violation</th><th>Description</th><th>Status</th><th>Sanction</th></tr></thead>
-                    <tbody>${vRows}</tbody>
-                  </table>
-                </div>`;
 
-            document.getElementById('editBtnModal').onclick   = () => openEdit(st);
-            document.getElementById('deleteBtnModal').onclick = () => openDelete(st.student_id);
+                <div class="info-grid">
+                  <div class="info-cell"><div class="info-key">Department</div><div class="info-val">${escHtml(st.dept_name)}</div></div>
+                  <div class="info-cell"><div class="info-key">Course</div><div class="info-val">${escHtml(st.course_name)}</div></div>
+                  <div class="info-cell"><div class="info-key">Year Level</div><div class="info-val">Year ${escHtml(st.year_level)}</div></div>
+                  <div class="info-cell"><div class="info-key">Total Violations</div><div class="info-val">${viols.length}</div></div>
+                </div>
+
+                <div class="sec-lbl">Violation Records <span class="sec-count">${viols.length}</span></div>
+                <div class="viol-box">${violBlock}</div>`;
+        })
+        .catch(() => {
+            body.innerHTML = '<div class="loading-state"><i class="fas fa-triangle-exclamation" style="font-size:22px;display:block;margin-bottom:10px;"></i>Could not load the student details. Please try again.</div>';
         });
 }
 
