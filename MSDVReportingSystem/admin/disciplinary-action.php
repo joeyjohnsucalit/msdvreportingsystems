@@ -44,6 +44,13 @@ $where="WHERE 1=1"; $params=[];
 if($search){$where.=" AND (s.full_name LIKE ? OR da.student_id LIKE ?)";$params[]="%$search%";$params[]="%$search%";}
 if($filterStatus){$where.=" AND da.status=?";$params[]=$filterStatus;}
 
+// ── Status totals for the summary strip (all records, ignoring filters) ──
+$statusCounts=['pending'=>0,'ongoing'=>0,'completed'=>0];
+foreach($pdo->query("SELECT status,COUNT(*) c FROM disciplinary_actions GROUP BY status")->fetchAll() as $r){
+    if(isset($statusCounts[$r['status']])) $statusCounts[$r['status']]=(int)$r['c'];
+}
+$allCount=array_sum($statusCounts);
+
 // ── Pagination: 10 records per page ──
 $perPage = 10;
 $page = max(1, (int)($_GET['page'] ?? 1));
@@ -61,6 +68,9 @@ $offset=($page-1)*$perPage;   // integers, so they are safe to put in the query
 // Link to another page while keeping the current search and filters
 function pageUrl($p){ $q=$_GET; $q['page']=$p; return '?'.http_build_query($q); }
 
+// Link for a status tab: keeps the search, resets to page 1
+function statusUrl($st){ $q=$_GET; unset($q['page']); if($st==='') unset($q['status']); else $q['status']=$st; $s=http_build_query($q); return 'disciplinary-action.php'.($s?'?'.$s:''); }
+
 // Page numbers to show: 1 … 4 5 [6] 7 8 … 20
 function pageWindow($cur,$total){
     $pages=[1,$total];
@@ -69,6 +79,13 @@ function pageWindow($cur,$total){
     $out=[];$prev=0;
     foreach($pages as $p){ if($p-$prev>1) $out[]='…'; $out[]=$p; $prev=$p; }
     return $out;
+}
+
+// Initials for the avatar circle
+function initials($name){
+    $parts=preg_split('/\s+/',trim($name)); $i='';
+    foreach($parts as $p){ if($p!==''){ $i.=mb_strtoupper(mb_substr($p,0,1)); if(mb_strlen($i)>=2) break; } }
+    return $i?:'?';
 }
 
 $stmt=$pdo->prepare("SELECT da.*,s.full_name,v.violation,v.category $joins $where ORDER BY da.id DESC LIMIT $perPage OFFSET $offset");
@@ -169,57 +186,105 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .user-avatar { width:26px; height:26px; border-radius:50%; background:rgba(255,255,255,0.15); display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:600; color:#fff; flex-shrink:0; }
 .user-name { font-size:12.5px; color:#c8cce0; font-weight:500; }
 
-/* ── CONTENT ── */
+/* ═══════════ REDESIGNED CONTENT AREA ═══════════ */
+:root {
+    --c-pending:#6b7280;   --c-pending-bg:#f1f2f4;
+    --c-ongoing:#d97706;   --c-ongoing-bg:#fff6e0;
+    --c-done:#16a34a;      --c-done-bg:#e9f9ef;
+    --c-minor:#2563eb;     --c-major:#dc2626;
+}
 .content { margin-top:60px; padding:28px 32px 40px; flex:1; }
 
-/* Page top */
-.page-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:24px; flex-wrap:wrap; gap:12px; }
-.page-top h2 { font-size:22px; font-weight:600; color:var(--text); letter-spacing:-0.4px; margin:0 0 3px; }
-.page-top p  { font-size:13px; color:var(--text-3); margin:0; }
-
 /* Alert banners */
-.alert-banner { border-radius:var(--r-md); padding:12px 16px; font-size:13px; font-weight:500; margin-bottom:16px; display:flex; align-items:center; gap:10px; border:none; }
-.alert-banner.success { background:#f0fdf4; color:#15803d; }
-.alert-banner.error   { background:#fff0f0; color:#dc2626; }
+.alert-banner { border-radius:var(--r-md); padding:12px 16px; font-size:13px; font-weight:500; margin-bottom:18px; display:flex; align-items:center; gap:10px; border:none; border-left:4px solid; }
+.alert-banner.success { background:#f0fdf4; color:#15803d; border-left-color:#16a34a; }
+.alert-banner.error   { background:#fff0f0; color:#dc2626; border-left-color:#dc2626; }
 .alert-banner i { flex-shrink:0; }
 
-/* Filter bar */
-.filter-bar { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); padding:16px 20px; margin-bottom:20px; display:flex; flex-wrap:wrap; gap:10px; align-items:center; position:sticky; top:0; z-index:100; box-shadow:0 2px 8px rgba(0,0,0,0.06); }
-.filter-input, .filter-select {
-    font-size:13px; padding:8px 12px; border-radius:var(--r-sm);
-    border:1px solid var(--border); background:#fff; color:var(--text);
-    font-family:'Plus Jakarta Sans',sans-serif; outline:none;
-    transition:border-color 0.15s; height:36px;
-}
-.filter-input:focus, .filter-select:focus { border-color:var(--accent); }
-.filter-input { min-width:200px; }
-.filter-select { appearance:none; -webkit-appearance:none; padding-right:28px; cursor:pointer;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239ca3af' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-    background-repeat:no-repeat; background-position:right 8px center; background-color:#fff;
-}
-.filter-btn { display:inline-flex; align-items:center; gap:6px; padding:8px 14px; border-radius:var(--r-sm); font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all 0.15s; height:36px; border:1px solid; }
-.filter-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
-.filter-btn.primary:hover { background:#1d4ed8; }
-.filter-btn.secondary { background:#fff; color:var(--text-2); border-color:var(--border); text-decoration:none; }
-.filter-btn.secondary:hover { background:var(--bg); }
+/* Summary strip */
+.stat-strip { display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-bottom:22px; }
+.stat { position:relative; background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); padding:18px 20px 16px; overflow:hidden; }
+.stat-top { display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+.stat-label { font-size:11.5px; font-weight:600; letter-spacing:.5px; text-transform:uppercase; color:var(--text-3); }
+.stat-ico { width:30px; height:30px; border-radius:9px; display:flex; align-items:center; justify-content:center; font-size:12px; background:var(--sbg); color:var(--sc); }
+.stat-num { font-size:30px; font-weight:600; letter-spacing:-1px; line-height:1; color:var(--text); }
+.stat-bar { height:5px; border-radius:10px; background:var(--border-soft); margin-top:14px; overflow:hidden; }
+.stat-bar span { display:block; height:100%; border-radius:10px; background:var(--sc); }
+.stat.pending   { --sc:var(--c-pending); --sbg:var(--c-pending-bg); }
+.stat.ongoing   { --sc:var(--c-ongoing); --sbg:var(--c-ongoing-bg); }
+.stat.completed { --sc:var(--c-done);    --sbg:var(--c-done-bg); }
 
-/* Count badge */
-.count-badge { font-size:12px; color:var(--text-3); margin-bottom:10px; }
-.count-badge strong { color:var(--text); }
+/* Toolbar: status tabs + search */
+.toolbar { display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:16px; }
+.seg { display:inline-flex; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:4px; gap:2px; }
+.seg a { display:inline-flex; align-items:center; gap:7px; padding:7px 14px; border-radius:9px; font-size:12.5px; font-weight:500; color:var(--text-2); text-decoration:none; transition:all .15s; }
+.seg a:hover { color:var(--text); background:var(--border-soft); }
+.seg a.active { background:var(--accent); color:#fff; box-shadow:0 2px 8px color-mix(in srgb, var(--accent) 35%, transparent); }
+.seg .n { font-size:10.5px; font-weight:700; padding:1px 7px; border-radius:20px; background:var(--border-soft); color:var(--text-3); }
+.seg a.active .n { background:rgba(255,255,255,.22); color:#fff; }
+.search-form { display:flex; align-items:center; gap:8px; }
+.search-box { position:relative; }
+.search-box i { position:absolute; left:13px; top:50%; transform:translateY(-50%); font-size:12px; color:var(--text-3); pointer-events:none; }
+.search-box input { height:40px; min-width:270px; padding:0 14px 0 36px; border-radius:12px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-size:13px; font-family:'Plus Jakarta Sans',sans-serif; outline:none; transition:all .15s; }
+.search-box input:focus { border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent); }
+.btn-go { height:40px; padding:0 16px; border-radius:12px; border:none; background:var(--accent); color:#fff; font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:background .15s; }
+.btn-go:hover { background:#1d4ed8; }
+.btn-reset { height:40px; padding:0 14px; display:inline-flex; align-items:center; border-radius:12px; border:1px solid var(--border); background:var(--surface); color:var(--text-2); font-size:13px; font-weight:500; text-decoration:none; transition:background .15s; }
+.btn-reset:hover { background:var(--bg); color:var(--text); }
 
-/* ── TABLE ── */
-.table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; }
+/* ── TABLE CARD ── */
+.table-wrap { background:var(--surface); border:1px solid var(--border); border-radius:var(--r-lg); overflow:hidden; box-shadow:0 1px 2px rgba(16,24,40,.03); }
 .data-table { width:100%; border-collapse:collapse; font-size:13px; }
-.data-table thead tr { border-bottom:1px solid var(--border); }
-.data-table thead th { padding:11px 16px; font-size:10.5px; font-weight:600; letter-spacing:0.5px; text-transform:uppercase; color:var(--text-3); background:var(--bg); white-space:nowrap; }
-.data-table tbody tr { border-bottom:1px solid var(--border-soft); transition:background 0.1s; }
+.data-table thead th { padding:13px 18px; font-size:10.5px; font-weight:600; letter-spacing:.6px; text-transform:uppercase; color:var(--text-3); background:var(--bg); border-bottom:1px solid var(--border); white-space:nowrap; text-align:left; }
+.data-table tbody tr { border-bottom:1px solid var(--border-soft); transition:background .12s; }
 .data-table tbody tr:last-child { border-bottom:none; }
-.data-table tbody tr:hover { background:#fafbfc; }
-.data-table td { padding:13px 16px; color:var(--text); vertical-align:middle; }
-.data-table td.sid { font-weight:600; font-family:monospace; font-size:12.5px; color:var(--accent); letter-spacing:0.2px; }
-.data-table td.name { font-weight:500; }
-.data-table td.muted { color:var(--text-2); }
-.empty-row td { padding:40px 16px; text-align:center; color:var(--text-3); font-size:13px; }
+.data-table tbody tr:hover { background:color-mix(in srgb, var(--accent) 3%, var(--surface)); }
+.data-table td { padding:15px 18px; color:var(--text); vertical-align:middle; }
+.empty-row td { padding:56px 16px; text-align:center; color:var(--text-3); font-size:13px; }
+.empty-row i { font-size:28px; display:block; margin-bottom:10px; opacity:.6; }
+
+/* Student cell */
+.stu { display:flex; align-items:center; gap:12px; min-width:190px; }
+.stu-av { width:38px; height:38px; border-radius:12px; background:var(--accent-light); color:var(--accent); display:flex; align-items:center; justify-content:center; font-size:12.5px; font-weight:600; flex-shrink:0; }
+.stu-name { font-weight:600; font-size:13.5px; line-height:1.25; }
+.stu-id { font-family:monospace; font-size:11.5px; color:var(--text-3); letter-spacing:.2px; margin-top:2px; }
+
+/* Violation cell */
+.vio { display:flex; align-items:flex-start; gap:9px; min-width:200px; }
+.vio-dot { width:8px; height:8px; border-radius:50%; margin-top:6px; flex-shrink:0; }
+.vio-dot.minor { background:var(--c-minor); }
+.vio-dot.major { background:var(--c-major); }
+.vio-title { font-size:13px; font-weight:500; line-height:1.35; }
+.vio-cat { font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.4px; margin-top:2px; }
+.vio-cat.minor { color:var(--c-minor); }
+.vio-cat.major { color:var(--c-major); }
+.sanction { font-size:12.5px; color:var(--text-2); max-width:200px; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; line-height:1.45; }
+
+/* Status + progress stepper */
+.mini-badge { display:inline-flex; align-items:center; gap:6px; padding:4px 11px; border-radius:20px; font-size:11px; font-weight:600; }
+.mini-badge::before { content:''; width:6px; height:6px; border-radius:50%; background:currentColor; }
+.mini-badge.minor     { background:#eff4ff; color:var(--c-minor); }
+.mini-badge.major     { background:#fff0f0; color:var(--c-major); }
+.mini-badge.completed { background:var(--c-done-bg);    color:var(--c-done); }
+.mini-badge.ongoing   { background:var(--c-ongoing-bg); color:var(--c-ongoing); }
+.mini-badge.pending   { background:var(--c-pending-bg); color:var(--c-pending); }
+.steps { display:flex; align-items:center; margin-top:9px; width:78px; }
+.steps i { width:8px; height:8px; border-radius:50%; background:var(--border); flex-shrink:0; }
+.steps b { flex:1; height:2px; background:var(--border); }
+.steps i.on, .steps b.on { background:var(--sc); }
+.steps.pending   { --sc:var(--c-pending); }
+.steps.ongoing   { --sc:var(--c-ongoing); }
+.steps.completed { --sc:var(--c-done); }
+
+/* Timeline */
+.tl { font-size:12.5px; color:var(--text-2); white-space:nowrap; line-height:1.6; }
+.tl span { display:inline-block; width:38px; font-size:10px; font-weight:600; letter-spacing:.4px; text-transform:uppercase; color:var(--text-3); }
+.tl em { font-style:normal; color:var(--text-3); }
+
+/* Action buttons */
+.update-btn { display:inline-flex; align-items:center; gap:7px; padding:8px 14px; border-radius:10px; font-size:12px; font-weight:600; border:none; background:var(--accent); color:#fff; cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; transition:all .15s; white-space:nowrap; }
+.update-btn:hover { background:#1d4ed8; transform:translateY(-1px); box-shadow:0 4px 10px color-mix(in srgb, var(--accent) 30%, transparent); }
+.done-txt { display:inline-flex; align-items:center; gap:6px; font-size:12px; font-weight:500; color:var(--c-done); }
 
 /* ── TABLE FOOTER + PAGINATION ── */
 .table-foot { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; padding:14px 18px; background:var(--bg); border-top:1px solid var(--border); }
@@ -231,64 +296,75 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .pg-btn.active { background:var(--accent); color:#fff; border-color:var(--accent); box-shadow:0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent); pointer-events:none; }
 .pg-btn.disabled { opacity:.4; pointer-events:none; }
 .pg-gap { color:var(--text-3); padding:0 4px; font-size:13px; }
+
+@media (max-width: 992px) {
+    .stat-strip { grid-template-columns:1fr; }
+    .table-wrap { overflow-x:auto; }
+    .data-table { min-width:900px; }
+}
 @media (max-width: 768px) {
+    .content { padding:22px 16px 32px; }
+    .toolbar { flex-direction:column; align-items:stretch; }
+    .seg { overflow-x:auto; }
+    .search-form { width:100%; }
+    .search-box { flex:1; }
+    .search-box input { min-width:0; width:100%; }
     .table-foot { justify-content:center; text-align:center; padding:10px 12px; }
     .foot-info  { width:100%; }
     .pager      { justify-content:center; }
     .pg-btn     { min-width:32px; height:32px; padding:0 8px; font-size:12px; }
 }
 
-/* Mini badge */
-.mini-badge { display:inline-flex; align-items:center; padding:2px 8px; border-radius:20px; font-size:10.5px; font-weight:600; }
-.mini-badge.minor     { background:#eff4ff; color:#2563eb; }
-.mini-badge.major     { background:#fff0f0; color:#dc2626; }
-.mini-badge.completed { background:#f0fdf4; color:#16a34a; }
-.mini-badge.ongoing   { background:#fffbeb; color:#d97706; }
-.mini-badge.pending   { background:#f4f5f7; color:#6b7280; }
+/* ── MODAL ── */
+.modal-content { border:1px solid var(--border); border-radius:20px; box-shadow:0 24px 64px rgba(0,0,0,0.16); font-family:'Plus Jakarta Sans',sans-serif; overflow:hidden; background:var(--surface); color:var(--text); }
+.m-head { display:flex; align-items:center; gap:14px; padding:22px 24px 18px; background:linear-gradient(135deg, var(--accent-light), var(--surface)); border-bottom:1px solid var(--border-soft); position:relative; }
+.m-av { width:46px; height:46px; border-radius:14px; background:var(--accent); color:#fff; display:flex; align-items:center; justify-content:center; font-size:15px; font-weight:600; flex-shrink:0; }
+.m-title { font-size:16px; font-weight:600; letter-spacing:-.2px; line-height:1.25; }
+.m-sub { font-family:monospace; font-size:12px; color:var(--text-3); margin-top:2px; }
+.m-head .btn-close { position:absolute; top:16px; right:16px; opacity:.4; }
+.m-head .btn-close:hover { opacity:.75; }
+.modal-body { padding:20px 24px 8px; }
+.m-caption { font-size:10.5px; font-weight:600; letter-spacing:.6px; text-transform:uppercase; color:var(--text-3); margin-bottom:8px; }
 
-/* Action buttons */
-.view-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:var(--r-sm); font-size:12px; font-weight:500; border:1px solid var(--border); background:#fff; color:var(--text-2); cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; transition:all 0.15s; }
-.view-btn:hover { background:var(--accent-light); color:var(--accent); border-color:#c7d7f8; }
-.update-btn { display:inline-flex; align-items:center; gap:6px; padding:6px 12px; border-radius:var(--r-sm); font-size:12px; font-weight:500; border:1px solid #c7d7f8; background:var(--accent-light); color:var(--accent); cursor:pointer; font-family:'Plus Jakarta Sans',sans-serif; transition:all 0.15s; }
-.update-btn:hover { background:#dbeafe; border-color:#93c5fd; }
-.done-txt { font-size:12px; color:var(--text-3); font-style:italic; }
+/* Case card */
+.case-card { border:1px solid var(--border); border-radius:14px; padding:14px 16px; margin-bottom:18px; background:var(--bg); }
+.case-row { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.case-viol { font-size:14px; font-weight:600; line-height:1.4; }
+.case-sanction { font-size:12.5px; color:var(--text-2); line-height:1.55; padding-top:10px; border-top:1px dashed var(--border); }
+.case-sanction b { display:block; font-size:10px; font-weight:600; letter-spacing:.5px; text-transform:uppercase; color:var(--text-3); margin-bottom:3px; }
 
-/* ── MODALS ── */
-.modal-content { border:1px solid var(--border); border-radius:var(--r-lg); box-shadow:0 16px 48px rgba(0,0,0,0.12); font-family:'Plus Jakarta Sans',sans-serif; overflow:hidden; }
-.modal-header { padding:20px 24px 16px; border-bottom:1px solid var(--border-soft); display:flex; align-items:center; justify-content:space-between; }
-.modal-header .modal-title { font-size:16px; font-weight:600; color:var(--text); letter-spacing:-0.2px; }
-.modal-header .btn-close { opacity:0.4; }
-.modal-header .btn-close:hover { opacity:0.7; }
-.modal-body { padding:20px 24px; }
-.modal-footer { padding:14px 24px; border-top:1px solid var(--border-soft); display:flex; justify-content:flex-end; gap:8px; background:#fafbfc; }
+/* Progress track in modal */
+.track { display:flex; align-items:center; margin-bottom:20px; padding:0 4px; }
+.t-node { display:flex; flex-direction:column; align-items:center; gap:6px; font-size:11px; font-weight:600; color:var(--text-3); }
+.t-node span { width:26px; height:26px; border-radius:50%; background:var(--surface); border:2px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:10px; }
+.t-node.done { color:var(--text); }
+.t-node.done span { background:var(--c-done); border-color:var(--c-done); color:#fff; }
+.t-node.current { color:var(--accent); }
+.t-node.current span { border-color:var(--accent); color:var(--accent); box-shadow:0 0 0 4px color-mix(in srgb, var(--accent) 15%, transparent); }
+.t-line { flex:1; height:2px; background:var(--border); margin:0 8px 20px; }
+.t-line.done { background:var(--c-done); }
 
-/* Form elements inside modals */
-.f-group { margin-bottom:16px; }
-.f-group:last-child { margin-bottom:0; }
-.f-label { display:block; font-size:12px; font-weight:600; color:var(--text-2); text-transform:uppercase; letter-spacing:0.4px; margin-bottom:6px; }
-.f-select { width:100%; padding:9px 12px; border-radius:var(--r-sm); border:1px solid var(--border); background:#fff; color:var(--text); font-size:13.5px; font-family:'Plus Jakarta Sans',sans-serif; outline:none; transition:border-color 0.15s; box-sizing:border-box; appearance:none; -webkit-appearance:none; cursor:pointer;
-    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239ca3af' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-    background-repeat:no-repeat; background-position:right 10px center; padding-right:30px;
-}
-.f-select:focus { border-color:var(--accent); box-shadow:0 0 0 3px rgba(37,99,235,0.08); }
+/* Next-status choice cards */
+.choice { display:block; position:relative; margin-bottom:10px; cursor:pointer; }
+.choice input { position:absolute; opacity:0; pointer-events:none; }
+.choice-box { display:flex; align-items:center; gap:12px; padding:13px 15px; border:1.5px solid var(--border); border-radius:14px; background:var(--surface); transition:all .15s; }
+.choice-ico { width:34px; height:34px; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:13px; flex-shrink:0; }
+.choice-ico.ongoing   { background:var(--c-ongoing-bg); color:var(--c-ongoing); }
+.choice-ico.completed { background:var(--c-done-bg);    color:var(--c-done); }
+.choice-t { font-size:13.5px; font-weight:600; line-height:1.2; }
+.choice-d { font-size:11.5px; color:var(--text-3); margin-top:2px; }
+.choice-tick { margin-left:auto; width:20px; height:20px; border-radius:50%; border:2px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:9px; color:transparent; transition:all .15s; flex-shrink:0; }
+.choice:hover .choice-box { border-color:#c7d7f8; }
+.choice input:checked + .choice-box { border-color:var(--accent); background:var(--accent-light); }
+.choice input:checked + .choice-box .choice-tick { background:var(--accent); border-color:var(--accent); color:#fff; }
+.choice input:focus-visible + .choice-box { box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
 
-/* Modal buttons */
-.m-btn { display:inline-flex; align-items:center; gap:6px; padding:9px 18px; border-radius:var(--r-sm); font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all 0.15s; border:1px solid; }
-.m-btn.ghost   { background:#fff; color:var(--text-2); border-color:var(--border); }
+.modal-footer { padding:14px 24px 20px; display:flex; justify-content:flex-end; gap:8px; border-top:none; background:transparent; }
+.m-btn { display:inline-flex; align-items:center; gap:6px; padding:10px 20px; border-radius:11px; font-size:13px; font-weight:500; font-family:'Plus Jakarta Sans',sans-serif; cursor:pointer; transition:all .15s; border:1px solid; }
+.m-btn.ghost   { background:var(--surface); color:var(--text-2); border-color:var(--border); }
 .m-btn.ghost:hover { background:var(--bg); }
 .m-btn.primary { background:var(--accent); color:#fff; border-color:var(--accent); }
 .m-btn.primary:hover { background:#1d4ed8; }
-
-/* Info grid inside modal */
-.info-grid { display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid var(--border); border-radius:var(--r-md); overflow:hidden; margin-bottom:20px; }
-.info-cell { padding:11px 14px; border-bottom:1px solid var(--border-soft); }
-.info-cell.full { grid-column:span 2; }
-.info-cell:nth-last-child(-n+2) { border-bottom:none; }
-.info-cell.full:last-child { border-bottom:none; }
-.info-key { font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:0.4px; color:var(--text-3); margin-bottom:3px; }
-.info-val { font-size:13.5px; color:var(--text); font-weight:500; }
-.info-val.sid-val { font-family:monospace; color:var(--accent); letter-spacing:0.5px; }
-.info-val.sanction-val { font-weight:400; color:var(--text-2); font-size:13px; line-height:1.5; }
 </style>
 </head>
 <body>
@@ -373,59 +449,105 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
     <div class="alert-banner error"><i class="fas fa-exclamation-circle"></i><?= $_SESSION['err'] ?><?php unset($_SESSION['err']); ?></div>
     <?php endif; ?>
 
-    <!-- Filter bar -->
-    <form method="GET" class="filter-bar">
-      <input type="text" name="search" class="filter-input" placeholder="Search by name or ID…" value="<?= htmlspecialchars($search) ?>">
-      <select name="status" class="filter-select">
-        <option value="">All Status</option>
-        <option value="pending"   <?=$filterStatus==='pending'  ?'selected':''?>>Pending</option>
-        <option value="ongoing"   <?=$filterStatus==='ongoing'  ?'selected':''?>>Ongoing</option>
-        <option value="completed" <?=$filterStatus==='completed'?'selected':''?>>Completed</option>
-      </select>
-      <button type="submit" class="filter-btn primary"><i class="fas fa-search" style="font-size:11px;"></i> Search</button>
-      <a href="disciplinary-action.php" class="filter-btn secondary">Reset</a>
-    </form>
+    <!-- Summary strip -->
+    <div class="stat-strip">
+      <?php
+      $stats=[
+        'pending'  =>['Pending','fa-hourglass-half'],
+        'ongoing'  =>['Ongoing','fa-spinner'],
+        'completed'=>['Completed','fa-check-double'],
+      ];
+      foreach($stats as $key=>$meta):
+        $pct=$allCount>0?round($statusCounts[$key]/$allCount*100):0;
+      ?>
+      <div class="stat <?= $key ?>">
+        <div class="stat-top">
+          <span class="stat-label"><?= $meta[0] ?></span>
+          <span class="stat-ico"><i class="fas <?= $meta[1] ?>"></i></span>
+        </div>
+        <div class="stat-num"><?= $statusCounts[$key] ?></div>
+        <div class="stat-bar"><span style="width:<?= $pct ?>%;"></span></div>
+      </div>
+      <?php endforeach; ?>
+    </div>
 
-    <!-- Count -->
-    <div class="count-badge">Showing <strong><?= count($daList) ?></strong> of <strong><?= $totalRecords ?></strong> record<?= $totalRecords!==1?'s':'' ?></div>
+    <!-- Toolbar: status tabs + search -->
+    <div class="toolbar">
+      <div class="seg">
+        <a href="<?= htmlspecialchars(statusUrl('')) ?>" class="<?= $filterStatus===''?'active':'' ?>">All <span class="n"><?= $allCount ?></span></a>
+        <a href="<?= htmlspecialchars(statusUrl('pending')) ?>" class="<?= $filterStatus==='pending'?'active':'' ?>">Pending <span class="n"><?= $statusCounts['pending'] ?></span></a>
+        <a href="<?= htmlspecialchars(statusUrl('ongoing')) ?>" class="<?= $filterStatus==='ongoing'?'active':'' ?>">Ongoing <span class="n"><?= $statusCounts['ongoing'] ?></span></a>
+        <a href="<?= htmlspecialchars(statusUrl('completed')) ?>" class="<?= $filterStatus==='completed'?'active':'' ?>">Completed <span class="n"><?= $statusCounts['completed'] ?></span></a>
+      </div>
+      <form method="GET" class="search-form">
+        <?php if($filterStatus!==''): ?><input type="hidden" name="status" value="<?= htmlspecialchars($filterStatus) ?>"><?php endif; ?>
+        <div class="search-box">
+          <i class="fas fa-search"></i>
+          <input type="text" name="search" placeholder="Search by name or ID…" value="<?= htmlspecialchars($search) ?>">
+        </div>
+        <button type="submit" class="btn-go">Search</button>
+        <?php if($search!==''||$filterStatus!==''): ?><a href="disciplinary-action.php" class="btn-reset">Reset</a><?php endif; ?>
+      </form>
+    </div>
 
     <!-- Table -->
     <div class="table-wrap">
       <table class="data-table">
         <thead>
           <tr>
-            <th>Student ID</th>
-            <th>Full Name</th>
+            <th>Student</th>
             <th>Violation</th>
             <th>Sanction</th>
             <th>Status</th>
-            <th>Start Date</th>
-            <th>End Date</th>
-            <th style="width:100px;"></th>
+            <th>Timeline</th>
+            <th style="width:110px;"></th>
           </tr>
         </thead>
         <tbody>
           <?php if(empty($daList)): ?>
-          <tr class="empty-row"><td colspan="8"><i class="fas fa-gavel" style="font-size:20px;display:block;margin-bottom:8px;"></i>No records found</td></tr>
-          <?php else: foreach($daList as $da): ?>
+          <tr class="empty-row"><td colspan="6"><i class="fas fa-gavel"></i>No records found</td></tr>
+          <?php else: foreach($daList as $da):
+              $lvl=['pending'=>0,'ongoing'=>1,'completed'=>2][$da['status']]??0;
+          ?>
           <tr>
-            <td class="sid"><?= htmlspecialchars($da['student_id']) ?></td>
-            <td class="name"><?= htmlspecialchars($da['full_name']) ?></td>
             <td>
-              <span class="mini-badge <?= $da['category'] ?>"><?= ucfirst($da['category']) ?></span>
-              <span class="muted" style="margin-left:6px;font-size:12.5px;color:var(--text-2);"><?= htmlspecialchars($da['violation']) ?></span>
+              <div class="stu">
+                <div class="stu-av"><?= htmlspecialchars(initials($da['full_name'])) ?></div>
+                <div>
+                  <div class="stu-name"><?= htmlspecialchars($da['full_name']) ?></div>
+                  <div class="stu-id"><?= htmlspecialchars($da['student_id']) ?></div>
+                </div>
+              </div>
             </td>
-            <td class="muted" style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"><?= htmlspecialchars($da['sanction']) ?></td>
-            <td><span class="mini-badge <?= $da['status'] ?>"><?= ucfirst($da['status']) ?></span></td>
-            <td class="muted"><?= $da['start_date'] ? date('M d, Y', strtotime($da['start_date'])) : '—' ?></td>
-            <td class="muted"><?= $da['end_date']   ? date('M d, Y', strtotime($da['end_date']))   : '—' ?></td>
+            <td>
+              <div class="vio">
+                <span class="vio-dot <?= htmlspecialchars($da['category']) ?>"></span>
+                <div>
+                  <div class="vio-title"><?= htmlspecialchars($da['violation']) ?></div>
+                  <div class="vio-cat <?= htmlspecialchars($da['category']) ?>"><?= ucfirst(htmlspecialchars($da['category'])) ?></div>
+                </div>
+              </div>
+            </td>
+            <td><div class="sanction" title="<?= htmlspecialchars($da['sanction']) ?>"><?= htmlspecialchars($da['sanction']) ?></div></td>
+            <td>
+              <span class="mini-badge <?= htmlspecialchars($da['status']) ?>"><?= ucfirst(htmlspecialchars($da['status'])) ?></span>
+              <div class="steps <?= htmlspecialchars($da['status']) ?>">
+                <i class="on"></i><b class="<?= $lvl>=1?'on':'' ?>"></b><i class="<?= $lvl>=1?'on':'' ?>"></i><b class="<?= $lvl>=2?'on':'' ?>"></b><i class="<?= $lvl>=2?'on':'' ?>"></i>
+              </div>
+            </td>
+            <td>
+              <div class="tl">
+                <div><span>Start</span><?= $da['start_date'] ? date('M d, Y', strtotime($da['start_date'])) : '<em>—</em>' ?></div>
+                <div><span>End</span><?= $da['end_date'] ? date('M d, Y', strtotime($da['end_date'])) : '<em>—</em>' ?></div>
+              </div>
+            </td>
             <td>
               <?php if($da['status']!=='completed'): ?>
               <button class="update-btn" onclick='openUpdateStatus(<?= json_encode($da) ?>)'>
                 <i class="fas fa-sync-alt" style="font-size:10px;"></i> Update
               </button>
               <?php else: ?>
-              <span class="done-txt"><i class="fas fa-check-double" style="margin-right:4px;color:#16a34a;"></i>Done</span>
+              <span class="done-txt"><i class="fas fa-check-circle"></i>Done</span>
               <?php endif; ?>
             </td>
           </tr>
@@ -460,42 +582,34 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
     <form method="POST" class="modal-content">
       <input type="hidden" name="action" value="update_status">
       <input type="hidden" name="da_id" id="daID">
-      <div class="modal-header">
-        <span class="modal-title">Update Disciplinary Status</span>
+
+      <div class="m-head">
+        <div class="m-av" id="daAvatar"></div>
+        <div>
+          <div class="m-title" id="daStudentName"></div>
+          <div class="m-sub" id="daStudentID"></div>
+        </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
+
       <div class="modal-body">
-        <div class="info-grid" style="margin-bottom:20px;">
-          <div class="info-cell">
-            <div class="info-key">Student ID</div>
-            <div class="info-val sid-val" id="daStudentID"></div>
+        <div class="m-caption">Case</div>
+        <div class="case-card">
+          <div class="case-row">
+            <span class="mini-badge" id="daCategory"></span>
+            <span class="mini-badge" id="daCurrentStatus"></span>
           </div>
-          <div class="info-cell">
-            <div class="info-key">Full Name</div>
-            <div class="info-val" id="daStudentName"></div>
-          </div>
-          <div class="info-cell">
-            <div class="info-key">Category</div>
-            <div class="info-val" id="daCategory"></div>
-          </div>
-          <div class="info-cell">
-            <div class="info-key">Current Status</div>
-            <div class="info-val" id="daCurrentStatus"></div>
-          </div>
-          <div class="info-cell full">
-            <div class="info-key">Violation</div>
-            <div class="info-val" id="daViolation"></div>
-          </div>
-          <div class="info-cell full" style="border-bottom:none;">
-            <div class="info-key">Sanction</div>
-            <div class="info-val sanction-val" id="daSanction"></div>
-          </div>
+          <div class="case-viol" id="daViolation" style="margin-bottom:10px;"></div>
+          <div class="case-sanction"><b>Sanction</b><span id="daSanction"></span></div>
         </div>
-        <div class="f-group" style="margin:0;">
-          <label class="f-label">Move Status To</label>
-          <select name="new_status" id="daNewStatus" class="f-select"></select>
-        </div>
+
+        <div class="m-caption">Progress</div>
+        <div class="track" id="daTrack"></div>
+
+        <div class="m-caption">Move status to</div>
+        <div id="daChoices"></div>
       </div>
+
       <div class="modal-footer">
         <button type="button" class="m-btn ghost" data-bs-dismiss="modal">Cancel</button>
         <button type="submit" class="m-btn primary"><i class="fas fa-sync-alt" style="font-size:11px;"></i> Update Status</button>
@@ -506,29 +620,62 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+const cap = s => s.charAt(0).toUpperCase()+s.slice(1);
+const STATUS_INFO = {
+    ongoing:   { icon:'fa-spinner',      desc:'Sanction is now being carried out' },
+    completed: { icon:'fa-check-double', desc:'Sanction has been fully served' }
+};
+
 function openUpdateStatus(da){
-    document.getElementById('daID').value          = da.id;
+    document.getElementById('daID').value               = da.id;
     document.getElementById('daStudentID').textContent  = da.student_id;
-    document.getElementById('daStudentName').textContent = da.full_name;
+    document.getElementById('daStudentName').textContent= da.full_name;
     document.getElementById('daViolation').textContent  = da.violation;
-    document.getElementById('daSanction').textContent   = da.sanction;
+    document.getElementById('daSanction').textContent   = da.sanction || '—';
 
-    // Category badge
+    // Avatar initials
+    const ini = da.full_name.trim().split(/\s+/).slice(0,2).map(w=>w[0]).join('').toUpperCase();
+    document.getElementById('daAvatar').textContent = ini || '?';
+
+    // Category + current status badges
     const catEl = document.getElementById('daCategory');
-    catEl.innerHTML = `<span class="mini-badge ${da.category}">${da.category.charAt(0).toUpperCase()+da.category.slice(1)}</span>`;
-
-    // Current status badge
+    catEl.className = 'mini-badge '+da.category;
+    catEl.textContent = cap(da.category);
     const stEl = document.getElementById('daCurrentStatus');
-    stEl.innerHTML = `<span class="mini-badge ${da.status}">${da.status.charAt(0).toUpperCase()+da.status.slice(1)}</span>`;
+    stEl.className = 'mini-badge '+da.status;
+    stEl.textContent = cap(da.status);
 
-    // Build forward-only status options
+    // Progress track
     const flow = {pending:0, ongoing:1, completed:2};
     const curr = flow[da.status] ?? 0;
-    const sel  = document.getElementById('daNewStatus');
-    sel.innerHTML = '';
-    Object.entries(flow).forEach(([s,v]) => {
-        if(v > curr) sel.innerHTML += `<option value="${s}">${s.charAt(0).toUpperCase()+s.slice(1)}</option>`;
+    const names = ['Pending','Ongoing','Completed'];
+    let track = '';
+    names.forEach((n,i)=>{
+        const cls = i<curr ? 'done' : (i===curr ? 'current' : '');
+        const inner = i<curr ? '<i class="fas fa-check"></i>' : (i+1);
+        track += `<div class="t-node ${cls}"><span>${inner}</span>${n}</div>`;
+        if(i<names.length-1) track += `<div class="t-line ${i<curr?'done':''}"></div>`;
     });
+    document.getElementById('daTrack').innerHTML = track;
+
+    // Forward-only choices (radio cards, first one pre-selected)
+    let choices = '', first = true;
+    Object.entries(flow).forEach(([s,v])=>{
+        if(v > curr){
+            const info = STATUS_INFO[s];
+            choices += `
+              <label class="choice">
+                <input type="radio" name="new_status" value="${s}" ${first?'checked':''}>
+                <span class="choice-box">
+                  <span class="choice-ico ${s}"><i class="fas ${info.icon}"></i></span>
+                  <span><div class="choice-t">${cap(s)}</div><div class="choice-d">${info.desc}</div></span>
+                  <span class="choice-tick"><i class="fas fa-check"></i></span>
+                </span>
+              </label>`;
+            first = false;
+        }
+    });
+    document.getElementById('daChoices').innerHTML = choices;
 
     new bootstrap.Modal(document.getElementById('updateStatusModal')).show();
 }
