@@ -84,7 +84,7 @@ if($filterCourse){$where.=" AND s.course_id=?";$params[]=$filterCourse;}
 if($filterYear){$where.=" AND s.year_level=?";$params[]=$filterYear;}
 if($filterDept){$where.=" AND s.department_id=?";$params[]=$filterDept;}
 // ── Pagination: only one page of students is loaded from the database at a time ──
-$perPage = 20;   // every page holds 20 students
+$perPage = 10;   // every page holds 10 students
 $page = max(1, (int)($_GET['page'] ?? 1));
 
 // Total number of students matching the current search/filters
@@ -133,6 +133,7 @@ function getRiskLevel($t){if($t>=5)return['label'=>'Critical','class'=>'danger',
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="notif-theme.css">
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
@@ -398,6 +399,16 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
     .pager      { justify-content:center; }
     .pg-btn     { min-width:32px; height:32px; padding:0 8px; font-size:12px; }
 }
+.notif-dropdown { color:var(--text); }
+.unread-pill { background:color-mix(in srgb, var(--accent) 14%, var(--surface)); color:var(--accent); }
+.notif-item:hover { background:color-mix(in srgb, var(--text) 5%, var(--surface)); }
+.notif-item.unread { background:color-mix(in srgb, var(--accent) 6%, var(--surface)); }
+.notif-item.unread:hover { background:color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.notif-avatar { background:color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.notif-avatar i { color:var(--accent); }
+.notif-item.unread .notif-avatar { background:color-mix(in srgb, var(--accent) 24%, var(--surface)); }
+.notif-item.unread .notif-avatar i { color:var(--accent); }
+.notif-dot-ind { background:var(--accent); }
 </style>
 </head>
 <body>
