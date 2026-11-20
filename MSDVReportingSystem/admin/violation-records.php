@@ -390,7 +390,8 @@ tr.violation-highlight > td:last-child  { border-right: 1px solid var(--accent) 
 .vv-id { font-family:monospace; font-size:12.5px; color:var(--accent); letter-spacing:.4px; margin:2px 0 8px; }
 .vv-tags { display:flex; gap:6px; flex-wrap:wrap; }
 .vv-when { text-align:right; }
-.vv-when .info-val { font-size:13px; }
+.vv-when .info-val { font-size:13px; white-space:nowrap; }
+.vv-when .vv-time { font-size:12px; color:var(--text-2); font-weight:500; margin-top:2px; white-space:nowrap; }
 .vv-grid { display:grid; grid-template-columns:2fr 1fr; gap:14px; margin-bottom:22px; }
 .vv-card { border:1px solid var(--border); border-radius:var(--r-md); padding:16px 18px; background:var(--surface); }
 .vv-card .sec-lbl { display:flex; align-items:center; gap:7px; }
@@ -726,6 +727,29 @@ function initialsOf(name){
     return (((w[0]||'')[0]||'') + ((w[1]||'')[0]||'')).toUpperCase() || '?';
 }
 
+/* Formats a DB date/datetime string as:
+     date -> "November 20, 2026"
+     time -> "3:45 PM"  (12-hour with AM/PM, not military time)
+   Returns {date, time}. time is '' when the value has no time part. */
+function formatDateTime12(raw){
+    if(!raw) return {date:'—', time:''};
+    const s = String(raw).trim();
+    // Parse "YYYY-MM-DD" or "YYYY-MM-DD HH:MM[:SS]" manually (works in every browser)
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    let d, hasTime;
+    if(m){
+        hasTime = m[4] !== undefined;
+        d = new Date(+m[1], +m[2]-1, +m[3], +(m[4]||0), +(m[5]||0), +(m[6]||0));
+    } else {
+        d = new Date(s);
+        hasTime = true;
+    }
+    if(isNaN(d.getTime())) return {date:s, time:''};
+    const date = d.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'});
+    const time = hasTime ? d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit', hour12:true}) : '';
+    return {date, time};
+}
+
 /* Renders the violation details into the View modal (does not show the modal) */
 function renderViolation(v){
     const evidence = v.evidence_path
@@ -759,6 +783,9 @@ function renderViolation(v){
            <div class="vv-ini" style="display:none;">${ini}</div>`
         : `<div class="vv-ini">${ini}</div>`;
 
+    // Date submitted: "Month Day, Year" + 12-hour time
+    const dt = formatDateTime12(v.date_submitted);
+
     document.getElementById('vvBody').innerHTML = `
         <div class="vv-hero">
           ${heroAvatar}
@@ -773,7 +800,8 @@ function renderViolation(v){
           </div>
           <div class="vv-when">
             <div class="info-key">Date Submitted</div>
-            <div class="info-val">${escHtml(v.date_submitted)}</div>
+            <div class="info-val">${escHtml(dt.date)}</div>
+            ${dt.time ? `<div class="vv-time">${escHtml(dt.time)}</div>` : ''}
           </div>
         </div>
 
@@ -916,7 +944,7 @@ async function skipEvidence(){
 
 /* ── NOTIFICATIONS ── */
 function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function fmtDate(s){ const d=new Date(s); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' · '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}); }
+function fmtDate(s){ const d=new Date(s); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' · '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true}); }
 
 function renderNotifs(data){
     const badge  = document.getElementById('notifBadge');
