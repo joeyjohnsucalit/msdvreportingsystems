@@ -261,6 +261,7 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .info-val { font-size:13.5px; color:var(--text); font-weight:500; }
 .info-val.sid-val { font-family:monospace; color:var(--accent); letter-spacing:0.5px; }
 .info-val.explanation { font-weight:400; color:var(--text-2); line-height:1.6; font-size:13px; }
+.info-val .dt-time { display:block; font-size:12px; font-weight:500; color:var(--text-2); margin-top:2px; }
 </style>
 </head>
 <body>
@@ -443,6 +444,35 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+/* Formats a DB date/datetime string as:
+     date -> "November 20, 2026"
+     time -> "3:45 PM"  (12-hour with AM/PM, not military time)
+   Returns {date, time}. time is '' when the value has no time part. */
+function formatDateTime12(raw){
+    if(!raw) return {date:'—', time:''};
+    const s = String(raw).trim();
+    // Parse "YYYY-MM-DD" or "YYYY-MM-DD HH:MM[:SS]" manually (works in every browser)
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    let d, hasTime;
+    if(m){
+        hasTime = m[4] !== undefined;
+        d = new Date(+m[1], +m[2]-1, +m[3], +(m[4]||0), +(m[5]||0), +(m[6]||0));
+    } else {
+        d = new Date(s);
+        hasTime = true;
+    }
+    if(isNaN(d.getTime())) return {date:s, time:''};
+    const date = d.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'});
+    const time = hasTime ? d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit', hour12:true}) : '';
+    return {date, time};
+}
+
+// HTML for an info cell value: date on top, 12-hour time underneath
+function dateTimeHtml(raw){
+    const dt = formatDateTime12(raw);
+    return escHtml(dt.date) + (dt.time ? `<span class="dt-time">${escHtml(dt.time)}</span>` : '');
+}
+
 function viewAppealFromButton(button) {
     try {
         const appeal = JSON.parse(button.getAttribute('data-appeal') || '{}');
@@ -488,11 +518,11 @@ function viewAppeal(ap){
           </div>
           <div class="info-cell">
             <div class="info-key">Violation Date</div>
-            <div class="info-val">${escHtml(ap.vdate || '—')}</div>
+            <div class="info-val">${dateTimeHtml(ap.vdate)}</div>
           </div>
           <div class="info-cell">
             <div class="info-key">Appeal Submitted</div>
-            <div class="info-val">${escHtml(ap.submitted_at || '—')}</div>
+            <div class="info-val">${dateTimeHtml(ap.submitted_at)}</div>
           </div>
           <div class="info-cell">
             <div class="info-key">Status</div>
@@ -545,7 +575,7 @@ function viewAppeal(ap){
 
 /* ── NOTIFICATIONS ── */
 function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function fmtDate(s){ const d=new Date(s); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' · '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}); }
+function fmtDate(s){ const d=new Date(s); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' · '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true}); }
 
 function renderNotifs(data){
     const badge  = document.getElementById('notifBadge');
