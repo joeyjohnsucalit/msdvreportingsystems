@@ -341,6 +341,10 @@ body { display:flex; background:var(--bg); min-height:100vh; font-family:'Plus J
 .viol-empty { text-align:center; padding:30px 16px; color:var(--text-3); font-size:12.5px; }
 .viol-empty i { display:block; font-size:20px; margin-bottom:8px; }
 
+/* Date + time cell in violations table */
+.v-date { font-weight:500; color:var(--text); white-space:nowrap; }
+.v-time { font-size:11px; color:var(--text-3); margin-top:2px; white-space:nowrap; }
+
 .loading-state { text-align:center; padding:44px 16px; color:var(--text-3); font-size:13px; }
 .spinner { width:26px; height:26px; border:3px solid var(--border); border-top-color:var(--accent); border-radius:50%; margin:0 auto 12px; animation:spin .8s linear infinite; }
 
@@ -695,6 +699,29 @@ function initials(name){
     return (((w[0]||'')[0]||'') + ((w[1]||'')[0]||'')).toUpperCase() || '?';
 }
 
+/* Formats a DB date/datetime string as:
+     date  -> "November 20, 2026"
+     time  -> "3:45 PM"   (12-hour, AM/PM — not military time)
+   Returns {date, time}. time is '' when the value has no time part. */
+function formatDateTime12(raw){
+    if(!raw) return {date:'—', time:''};
+    const s = String(raw).trim();
+    // Parse "YYYY-MM-DD" or "YYYY-MM-DD HH:MM[:SS]" manually (works in every browser)
+    const m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+    let d, hasTime;
+    if(m){
+        hasTime = m[4] !== undefined;
+        d = new Date(+m[1], +m[2]-1, +m[3], +(m[4]||0), +(m[5]||0), +(m[6]||0));
+    } else {
+        d = new Date(s);
+        hasTime = true;
+    }
+    if(isNaN(d.getTime())) return {date:s, time:''};
+    const date = d.toLocaleDateString('en-US', {month:'long', day:'numeric', year:'numeric'});
+    const time = hasTime ? d.toLocaleTimeString('en-US', {hour:'numeric', minute:'2-digit', hour12:true}) : '';
+    return {date, time};
+}
+
 function viewStudent(st){
     const modal = new bootstrap.Modal(document.getElementById('viewStudentModal'));
     const body  = document.getElementById('viewModalBody');
@@ -708,15 +735,21 @@ function viewStudent(st){
             const risk = getRiskBadge(st.total_violations);
             const ini  = escHtml(initials(st.full_name));
 
-            const vRows = viols.map(v => `
+            const vRows = viols.map(v => {
+                const dt = formatDateTime12(v.date_submitted);
+                return `
                 <tr>
-                  <td style="white-space:nowrap;">${escHtml(v.date_submitted)}</td>
+                  <td>
+                    <div class="v-date">${escHtml(dt.date)}</div>
+                    ${dt.time ? `<div class="v-time">${escHtml(dt.time)}</div>` : ''}
+                  </td>
                   <td><span class="mini-badge ${escHtml(v.category)}">${escHtml(v.category)}</span></td>
                   <td style="font-weight:600;color:var(--text);">${escHtml(v.violation)}</td>
                   <td>${escHtml(v.description||'—')}</td>
                   <td><span class="mini-badge ${escHtml(v.status)}">${escHtml(v.status)}</span></td>
                   <td>${escHtml(v.sanction||'—')}</td>
-                </tr>`).join('');
+                </tr>`;
+            }).join('');
 
             const violBlock = viols.length === 0
                 ? '<div class="viol-empty"><i class="fas fa-circle-check"></i>No violations recorded.</div>'
@@ -778,7 +811,7 @@ function openDelete(sid){
 
 // ── NOTIFICATIONS ──
 function escHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function fmtDate(s){ const d=new Date(s); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' · '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit'}); }
+function fmtDate(s){ const d=new Date(s); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})+' · '+d.toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',hour12:true}); }
 
 function renderNotifs(data){
     const badge  = document.getElementById('notifBadge');
